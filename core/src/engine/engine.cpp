@@ -202,6 +202,11 @@ arca_engine *arca_engine_create(const arca_engine_params *params) {
     // current engine fork; pin it so behavior is deterministic for the
     // verification gate. Revisit when render-API hwdec lands engine-side.
     mpv_set_option_string(e->mpv, "hwdec", "no");
+    // The render session clears its own target; letting the renderer clear
+    // letterbox borders requires blit_dst on the wrapped texture, which
+    // R10G10B10A2 lacks on some vendors (NVIDIA: pl_tex_clear validation
+    // failure). gpu-next-only option.
+    mpv_set_option_string(e->mpv, "border-background", "none");
     // With config=no there is no default shader cache, so libplacebo
     // recompiles every launch (measured: ~6s of VO drops on first frames).
     // Persist compiled shaders under local app data.

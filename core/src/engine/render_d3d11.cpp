@@ -46,6 +46,7 @@ struct arca_render_session {
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<IDXGISwapChain3> swapchain;
     ComPtr<ID3D11Texture2D> video_tex;  // engine render target (see header)
+    ComPtr<ID3D11RenderTargetView> video_rtv;
     int video_tex_w = 0, video_tex_h = 0;
     mpv_render_context *rctx = nullptr;
 
@@ -91,8 +92,31 @@ bool create_device(arca_render_session *s) {
     static const D3D_FEATURE_LEVEL levels[] = {
         D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0,
     };
+
+    // Prefer the high-performance adapter: on hybrid laptops the default
+    // (adapter 0) is the iGPU, which measurably cannot tone-map 4K60
+    // (M2: ~46 VO drops/sec on Intel UHD vs the dGPU). Cross-adapter
+    // present to an iGPU-owned panel is handled by the OS.
+    ComPtr<IDXGIAdapter> adapter;
+    ComPtr<IDXGIFactory6> factory6;
+    if (SUCCEEDED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory6)))) {
+        ComPtr<IDXGIAdapter1> a1;
+        if (SUCCEEDED(factory6->EnumAdapterByGpuPreference(
+                0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&a1)))) {
+            adapter = a1;
+            DXGI_ADAPTER_DESC1 desc{};
+            if (SUCCEEDED(a1->GetDesc1(&desc))) {
+                char name[128]{};
+                WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1, name,
+                                    sizeof(name) - 1, nullptr, nullptr);
+                logf(s->engine, "[arca-render] adapter: %s", name);
+            }
+        }
+    }
+
     HRESULT hr = D3D11CreateDevice(
-        nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+        adapter.Get(),
+        adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, ARRAYSIZE(levels),
         D3D11_SDK_VERSION, &s->device, nullptr, &s->context);
     if (FAILED(hr)) {
@@ -176,21 +200,40 @@ bool negotiate_colorspace(arca_render_session *s) {
 
 // The tone-map target must be the display's real peak, not the content's
 // mastering peak (fork Phase-5 finding). Re-queried after resize so monitor
-// moves are picked up.
+// moves are picked up. Located by the window's HMONITOR across *all*
+// adapters: on hybrid GPUs the swapchain's GetContainingOutput fails when
+// the render device isn't the adapter that owns the panel.
 void query_display_hdr(arca_render_session *s) {
-    ComPtr<IDXGIOutput> out;
-    if (FAILED(s->swapchain->GetContainingOutput(&out)) || !out)
+    HMONITOR monitor = MonitorFromWindow(s->hwnd, MONITOR_DEFAULTTONEAREST);
+    if (!monitor)
         return;
-    ComPtr<IDXGIOutput6> out6;
-    if (SUCCEEDED(out.As(&out6))) {
-        DXGI_OUTPUT_DESC1 d{};
-        if (SUCCEEDED(out6->GetDesc1(&d)) && d.MaxLuminance > 0) {
-            s->disp_max_nits.store(d.MaxLuminance);
-            s->disp_min_nits.store(d.MinLuminance);
-            logf(s->engine,
-                 "[arca-render] display: peak=%.0f nits, min=%.4f nits, "
-                 "colorspace=%d", d.MaxLuminance, d.MinLuminance,
-                 static_cast<int>(d.ColorSpace));
+
+    ComPtr<IDXGIFactory1> factory;
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))
+        return;
+    for (UINT ai = 0;; ai++) {
+        ComPtr<IDXGIAdapter1> adapter;
+        if (factory->EnumAdapters1(ai, &adapter) == DXGI_ERROR_NOT_FOUND)
+            break;
+        for (UINT oi = 0;; oi++) {
+            ComPtr<IDXGIOutput> out;
+            if (adapter->EnumOutputs(oi, &out) == DXGI_ERROR_NOT_FOUND)
+                break;
+            DXGI_OUTPUT_DESC od{};
+            if (FAILED(out->GetDesc(&od)) || od.Monitor != monitor)
+                continue;
+            ComPtr<IDXGIOutput6> out6;
+            DXGI_OUTPUT_DESC1 d{};
+            if (SUCCEEDED(out.As(&out6)) && SUCCEEDED(out6->GetDesc1(&d)) &&
+                d.MaxLuminance > 0) {
+                s->disp_max_nits.store(d.MaxLuminance);
+                s->disp_min_nits.store(d.MinLuminance);
+                logf(s->engine,
+                     "[arca-render] display: peak=%.0f nits, min=%.4f nits, "
+                     "colorspace=%d", d.MaxLuminance, d.MinLuminance,
+                     static_cast<int>(d.ColorSpace));
+            }
+            return;
         }
     }
 }
@@ -218,6 +261,7 @@ bool create_render_context(arca_render_session *s) {
 bool ensure_video_texture(arca_render_session *s) {
     if (s->video_tex && s->video_tex_w == s->width && s->video_tex_h == s->height)
         return true;
+    s->video_rtv.Reset();
     s->video_tex.Reset();
 
     D3D11_TEXTURE2D_DESC desc{};
@@ -233,6 +277,13 @@ bool ensure_video_texture(arca_render_session *s) {
     if (FAILED(hr)) {
         logf(s->engine, "[arca-render] CreateTexture2D(%dx%d) failed: 0x%08lx",
              s->width, s->height, hr);
+        return false;
+    }
+    hr = s->device->CreateRenderTargetView(s->video_tex.Get(), nullptr,
+                                           &s->video_rtv);
+    if (FAILED(hr)) {
+        logf(s->engine, "[arca-render] CreateRenderTargetView failed: 0x%08lx", hr);
+        s->video_tex.Reset();
         return false;
     }
     s->video_tex_w = s->width;
@@ -266,6 +317,11 @@ void render_frame(arca_render_session *s, bool force_redraw) {
 
     if (!ensure_video_texture(s))
         return;
+
+    // The core owns border clearing (engine runs --border-background=none;
+    // see ensure_video_texture rationale).
+    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    s->context->ClearRenderTargetView(s->video_rtv.Get(), black);
 
     mpv_d3d11_tex tex{};
     tex.tex = s->video_tex.Get();
