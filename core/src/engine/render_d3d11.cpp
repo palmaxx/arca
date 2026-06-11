@@ -38,9 +38,20 @@
 
 using Microsoft::WRL::ComPtr;
 
+// WinUI3 SwapChainPanel native interop (microsoft.ui.xaml.media.dxinterop.h,
+// WindowsAppSDK 1.8). Declared locally so the core builds without the
+// WinAppSDK headers; the IID is stable public API.
+MIDL_INTERFACE("63aad0b8-7c24-40ff-85a8-640d944cc325")
+IArcaSwapChainPanelNative : public IUnknown {
+public:
+    virtual HRESULT STDMETHODCALLTYPE SetSwapChain(IDXGISwapChain *swapChain) = 0;
+};
+
 struct arca_render_session {
     arca_engine *engine = nullptr;
-    HWND hwnd = nullptr;
+    HWND hwnd = nullptr;            // hwnd session: target; panel: monitor ref
+    ComPtr<IUnknown> panel_native;  // panel session only
+    bool panel_mode = false;
 
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
@@ -63,6 +74,11 @@ struct arca_render_session {
     std::atomic<bool> hdr_active{false};
     std::atomic<float> disp_max_nits{1000.0f};
     std::atomic<float> disp_min_nits{0.005f};
+
+    // Panel composition scale; the inverse is applied as the swapchain
+    // matrix transform so physical-pixel buffers map 1:1 onto the panel.
+    std::atomic<float> scale_x{1.0f}, scale_y{1.0f};
+    std::atomic<bool> scale_pending{false};
 };
 
 namespace {
@@ -126,6 +142,20 @@ bool create_device(arca_render_session *s) {
     return true;
 }
 
+// Applies the inverse composition scale as the swapchain matrix transform
+// (panel sessions; DXGI rejects it for hwnd swapchains).
+void apply_scale(arca_render_session *s) {
+    if (!s->panel_mode)
+        return;
+    ComPtr<IDXGISwapChain2> sc2;
+    if (FAILED(s->swapchain.As(&sc2)))
+        return;
+    DXGI_MATRIX_3X2_F m{};
+    m._11 = 1.0f / s->scale_x.load();
+    m._22 = 1.0f / s->scale_y.load();
+    sc2->SetMatrixTransform(&m);
+}
+
 bool create_swapchain(arca_render_session *s) {
     ComPtr<IDXGIFactory2> factory;
     HRESULT hr = CreateDXGIFactory2(0, IID_PPV_ARGS(&factory));
@@ -147,17 +177,29 @@ bool create_swapchain(arca_render_session *s) {
     scd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
 
     ComPtr<IDXGISwapChain1> sc1;
-    hr = factory->CreateSwapChainForHwnd(s->device.Get(), s->hwnd, &scd,
-                                         nullptr, nullptr, &sc1);
-    if (FAILED(hr)) {
-        logf(s->engine, "[arca-render] CreateSwapChainForHwnd failed: 0x%08lx", hr);
-        return false;
+    if (s->panel_mode) {
+        hr = factory->CreateSwapChainForComposition(s->device.Get(), &scd,
+                                                    nullptr, &sc1);
+        if (FAILED(hr)) {
+            logf(s->engine,
+                 "[arca-render] CreateSwapChainForComposition failed: 0x%08lx", hr);
+            return false;
+        }
+    } else {
+        hr = factory->CreateSwapChainForHwnd(s->device.Get(), s->hwnd, &scd,
+                                             nullptr, nullptr, &sc1);
+        if (FAILED(hr)) {
+            logf(s->engine,
+                 "[arca-render] CreateSwapChainForHwnd failed: 0x%08lx", hr);
+            return false;
+        }
+        factory->MakeWindowAssociation(s->hwnd, DXGI_MWA_NO_ALT_ENTER);
     }
-    factory->MakeWindowAssociation(s->hwnd, DXGI_MWA_NO_ALT_ENTER);
     if (FAILED(sc1.As(&s->swapchain))) {
         logf(s->engine, "[arca-render] IDXGISwapChain3 unavailable");
         return false;
     }
+    apply_scale(s);
     return true;
 }
 
@@ -314,6 +356,8 @@ void render_frame(arca_render_session *s, bool force_redraw) {
             }
         }
     }
+    if (s->scale_pending.exchange(false))
+        apply_scale(s);
 
     if (!ensure_video_texture(s))
         return;
@@ -395,11 +439,12 @@ void destroy_session(arca_render_session *s) {
 
 extern "C" {
 
-arca_render_session *arca_render_create_hwnd(arca_engine *engine, void *hwnd,
-                                             int width, int height) {
-    if (!engine || !hwnd || width <= 0 || height <= 0)
-        return nullptr;
+namespace {
 
+arca_render_session *create_session(arca_engine *engine, HWND hwnd,
+                                    IUnknown *panel_native,
+                                    int width, int height,
+                                    float scale_x, float scale_y) {
     {
         std::lock_guard<std::mutex> lock(engine->session_mutex);
         if (engine->session) {
@@ -412,9 +457,13 @@ arca_render_session *arca_render_create_hwnd(arca_engine *engine, void *hwnd,
     if (!s)
         return nullptr;
     s->engine = engine;
-    s->hwnd = static_cast<HWND>(hwnd);
+    s->hwnd = hwnd;
+    s->panel_native = panel_native;
+    s->panel_mode = panel_native != nullptr;
     s->width = width;
     s->height = height;
+    s->scale_x.store(scale_x);
+    s->scale_y.store(scale_y);
 
     std::promise<bool> ready;
     std::future<bool> ready_f = ready.get_future();
@@ -424,9 +473,56 @@ arca_render_session *arca_render_create_hwnd(arca_engine *engine, void *hwnd,
         return nullptr;
     }
 
+    // Attach the composition swapchain to the panel on the caller's (UI)
+    // thread, as SwapChainPanel interop requires.
+    if (s->panel_mode) {
+        ComPtr<IArcaSwapChainPanelNative> native;
+        HRESULT hr = s->panel_native.As(&native);
+        if (SUCCEEDED(hr))
+            hr = native->SetSwapChain(s->swapchain.Get());
+        if (FAILED(hr)) {
+            logf(engine, "[arca-render] SetSwapChain on panel failed: 0x%08lx", hr);
+            destroy_session(s);
+            return nullptr;
+        }
+    }
+
     std::lock_guard<std::mutex> lock(engine->session_mutex);
     engine->session = s;
     return s;
+}
+
+} // namespace
+
+arca_render_session *arca_render_create_hwnd(arca_engine *engine, void *hwnd,
+                                             int width, int height) {
+    if (!engine || !hwnd || width <= 0 || height <= 0)
+        return nullptr;
+    return create_session(engine, static_cast<HWND>(hwnd), nullptr,
+                          width, height, 1.0f, 1.0f);
+}
+
+arca_render_session *arca_render_create_panel(arca_engine *engine,
+                                              void *panel_native,
+                                              void *hwnd_for_monitor,
+                                              int width, int height,
+                                              float scale_x, float scale_y) {
+    if (!engine || !panel_native || width <= 0 || height <= 0 ||
+        scale_x <= 0.0f || scale_y <= 0.0f)
+        return nullptr;
+    return create_session(engine, static_cast<HWND>(hwnd_for_monitor),
+                          static_cast<IUnknown *>(panel_native),
+                          width, height, scale_x, scale_y);
+}
+
+void arca_render_set_scale(arca_render_session *session,
+                           float scale_x, float scale_y) {
+    if (!session || scale_x <= 0.0f || scale_y <= 0.0f)
+        return;
+    session->scale_x.store(scale_x);
+    session->scale_y.store(scale_y);
+    session->scale_pending.store(true);
+    poke(session);
 }
 
 void arca_render_resize(arca_render_session *session, int width, int height) {

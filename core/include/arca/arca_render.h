@@ -35,6 +35,24 @@ ARCA_API arca_render_session *arca_render_create_hwnd(arca_engine *engine,
                                                       void *hwnd,
                                                       int width, int height);
 
+// Creates a render session presenting into a WinUI3 SwapChainPanel via a
+// DirectComposition swapchain. `panel_native` is the panel's IUnknown (the
+// core QIs ISwapChainPanelNative and attaches the swapchain — call from the
+// UI thread). `hwnd_for_monitor` is the hosting top-level window, used only
+// to locate the display for HDR capability queries. Sizes are in physical
+// pixels; `scale_x/y` is the panel composition scale (the core applies the
+// inverse DXGI matrix transform).
+ARCA_API arca_render_session *arca_render_create_panel(arca_engine *engine,
+                                                       void *panel_native,
+                                                       void *hwnd_for_monitor,
+                                                       int width, int height,
+                                                       float scale_x,
+                                                       float scale_y);
+
+// Updates the composition scale (panel sessions; no-op for hwnd sessions).
+ARCA_API void arca_render_set_scale(arca_render_session *session,
+                                    float scale_x, float scale_y);
+
 // Resize the swapchain (e.g. from WM_SIZE / panel SizeChanged). Safe from
 // any thread; applied before the next rendered frame.
 ARCA_API void arca_render_resize(arca_render_session *session, int width, int height);
