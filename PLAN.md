@@ -259,12 +259,16 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
 
 ## Day 0 milestones (Phase C) — each must build & run before the next
 
-- **M0 — Toolchain + first light.** Scaffold repo/CMake/vcpkg; vendor libmpv
-  artifacts + generate MSVC import lib; `arca_core.dll` skeleton (engine
-  create/load/play + pl-d3d11 render session through the C ABI);
-  `tools/hdr-verify` bare-Win32 host plays an HDR clip through the core.
-  *Gate:* MinGW-DLL↔MSVC link proven; `video-out-params` matches windowed mpv
-  (PLAN §1 risk 5 retired).
+- **M0 — Toolchain + first light. ✅ DONE 2026-06-12.** Scaffolded repo/
+  CMake (MSVC + Ninja via `build.ps1`); vendored libmpv + generated MSVC
+  import lib + the 110-DLL MSYS2 runtime closure (incl. **libdovi** — DV RPU
+  support present); `arca_core.dll` (engine + pl-d3d11 render session) +
+  `tools/hdr-verify`. *Gate result:* 4K HDR10 HEVC plays through the core —
+  `hdr_active=1`, BT.2020/PQ negotiated, display peak queried (271 nits),
+  `video-out-params` identical to `video-params` (bt.2020/pq, sig-peak
+  4.926108 — the fork's validated values), SW decode, 0 steady-state drops
+  (~36-frame startup transient → M2). Resize + teardown hardened (ADR-004).
+  MinGW-DLL↔MSVC link proven (§6 risk 5 retired).
 - **M1 — WinUI3 shell embed.** Fluss-derived shell hosts the core via
   `SwapChainPanel` (panel native ptr → core; core owns swapchain + render
   thread + present). Keyboard controls, scrubbing, File→Open single file.

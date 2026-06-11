@@ -142,3 +142,28 @@ milestone M2's verification gate passing** (user-run, on the HDR display):
 **If the gate fails** (DV broken on the render path, or 4K60 unwatchable):
 pull the mpv-side render-API hwdec phase forward before Day 0 sign-off
 (option (c) from PLAN.md §6) instead of shipping the deferral.
+
+---
+
+## ADR-004 — Render into an intermediate texture, not the swapchain backbuffer
+
+**Date:** 2026-06-12 · **Status:** Accepted (M0 empirical finding)
+
+**Context:** The fork's reference host wraps the swapchain backbuffer
+directly (`GetBuffer → render → Present`) and assumes no backbuffer
+reference survives between frames. M0's automated resize test disproved
+that: the engine keeps its `pl_tex` wrap of the last-rendered texture alive
+until the *next* render call, so `ResizeBuffers` fails with
+`DXGI_ERROR_INVALID_CALL` whenever the wrapped texture is a backbuffer.
+
+**Decision:** The core renders into a core-owned `R10G10B10A2`
+RT+UAV intermediate texture and `CopyResource`s to the backbuffer before
+`Present`. One trivial GPU copy per frame buys an always-legal
+`ResizeBuffers` (constant occurrence in a real shell: window drags,
+SwapChainPanel relayouts) and keeps engine-held references off swapchain
+resources entirely. HDR negotiation, `TARGET_COLORSPACE`, and the
+display-peak rule are unchanged from the validated sequence.
+
+**Also fixed under this ADR:** destroying a render session (or engine) now
+stops playback first — freeing the render context mid-file otherwise
+surfaces a spurious "video output initialization failed" engine error.
