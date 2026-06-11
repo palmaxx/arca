@@ -7,9 +7,9 @@
 
 | Phase | State | Date |
 |---|---|---|
-| **A — Discovery** | ✅ Complete — findings below. **Awaiting checkpoint approval.** | 2026-06-11 |
-| B — Plan & scaffold | Not started (blocked on A approval) | |
-| C — Day 0 build | Not started | |
+| **A — Discovery** | ✅ Approved (with direction: quality-first §3 criterion; hwdec deferral accepted contingent on DV/RPU verification) | 2026-06-11 |
+| **B — Plan & scaffold** | ✅ Drafted — ADR-001/002/003 resolved, layout + milestones below. **Awaiting checkpoint approval.** | 2026-06-11 |
+| C — Day 0 build | Not started (blocked on B approval) | |
 
 ---
 
@@ -211,16 +211,85 @@ Rust NAPI addon for mpv/WASAPI/window chrome).
 
 ---
 
-# Phase B — Plan & scaffold (pending)
+# Phase B — Plan & scaffold
 
-To produce after Phase A approval:
-- Resolve §3 (C++ vs C# shared core) in `DECISIONS.md` — Phase A evidence
-  materially strengthens Option B vs the brief's framing (Fluss core is real,
-  portable, and maps 1:1 onto the Day 0 scope), while §6 risks 3–4 are the
-  honest counterweights.
-- Monorepo layout (core, shells, mpv consumption strategy — vendored DLL vs
-  submodule/worktree reference, db, assets, build/CI).
-- Day 0 milestone breakdown (§7 of the brief), each milestone build-and-run
-  verified.
+## Architecture (resolved)
 
-# Phase C — Day 0 build (pending)
+- **ADR-001: C++20 shared core exposing a flat C ABI**; WinUI3/C# shell
+  (Fluss-derived) on Windows via control-plane P/Invoke; SwiftUI on macOS
+  importing the same C ABI. Render data plane fully inside the core (shells
+  hand in a surface, never touch frames). Fluss C# library logic becomes the
+  reference spec for the C++ port; streamxs parser tests become behavioral
+  fixtures.
+- **ADR-002: libmpv vendored as prebuilt artifacts** (headers + DLL + MSVC
+  import lib) from `mpv-wt-hdr`, with provenance + refresh script.
+- **ADR-003: Day 0 = software decode**, contingent on the M2 verification
+  gate (incl. Dolby Vision RPU passthrough). Gate failure pulls the mpv-side
+  render-API hwdec phase forward.
+
+## Monorepo layout
+
+```
+ARCA/
+  CMakeLists.txt, CMakePresets.json, vcpkg.json   # core + tools build (MSVC x64)
+  core/
+    include/arca/        # public C ABI: arca.h, arca_engine.h, arca_render.h,
+                         #   arca_library.h, arca_events.h
+    src/
+      engine/            # libmpv lifecycle, command/property/event loop,
+                         #   render sessions (pl-d3d11 now, pl-vulkan later),
+                         #   TARGET_COLORSPACE + display-peak negotiation
+      library/           # scan/index/group; offline|online pipeline seam
+      db/                # SQLite direct (+FTS5): schema, migrations, queries
+      media/             # probing/thumbnail seams only (post-Day-0 impl)
+      util/
+    tests/               # core unit tests (parser fixtures from streamxs)
+  shells/
+    windows/Arca/        # WinUI3 C# app (Fluss-derived shell) + Interop/ (P/Invoke)
+    macos/               # SwiftUI shell — later phase (MoltenVK / pl-vulkan)
+  third_party/mpv/       # vendored: include/, libmpv-2.dll, mpv.lib,
+                         #   PROVENANCE.md, refresh.ps1   (ADR-002)
+  tools/hdr-verify/      # standalone HDR smoke host (rapi_hdr_present port)
+  assets/                # shared assets; ffprobe/ffmpeg land here post-Day-0
+  docs/verification/     # M2 gate results, playback smoke checklist
+```
+
+Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
+`core/include/arca/`; core deps link PRIVATE and never leak through the ABI.
+
+## Day 0 milestones (Phase C) — each must build & run before the next
+
+- **M0 — Toolchain + first light.** Scaffold repo/CMake/vcpkg; vendor libmpv
+  artifacts + generate MSVC import lib; `arca_core.dll` skeleton (engine
+  create/load/play + pl-d3d11 render session through the C ABI);
+  `tools/hdr-verify` bare-Win32 host plays an HDR clip through the core.
+  *Gate:* MinGW-DLL↔MSVC link proven; `video-out-params` matches windowed mpv
+  (PLAN §1 risk 5 retired).
+- **M1 — WinUI3 shell embed.** Fluss-derived shell hosts the core via
+  `SwapChainPanel` (panel native ptr → core; core owns swapchain + render
+  thread + present). Keyboard controls, scrubbing, File→Open single file.
+  *Gate:* 4K HDR plays in-shell with controls; HDR verified on-display, not
+  via screenshots (PLAN §1 host requirement 2).
+- **M2 — Playback verification gate (user-run, ADR-003).** HDR10 metadata +
+  peak negotiation; **DV profile 5 + 8 RPU passthrough**; SW-decode headroom
+  on 4K24/4K60 HEVC; seek robustness. Results →
+  `docs/verification/day0.md`. *Gate failure ⇒ ADR-003 fallback (pull hwdec
+  forward) before continuing.*
+- **M3 — DB + library management.** SQLite schema v1 (libraries, media items
+  w/ content-derived IDs, mode field per Fluss `MetadataMode`); import /
+  view / delete a library folder; play single files from the folder view.
+- **M4 — Offline/Online hard seam (scaffold).** Two architecturally distinct
+  paths per brief §7: offline = explorer-like view whose code path links no
+  network facility at all (enforced at the module boundary); online = items
+  indexed/grouped by kind with a stubbed enrichment queue (no fetching yet).
+  Probing, queue, media-detail remain seams only.
+- **M5 — Day 0 wrap.** Keyboard map + menu polish, status surfacing,
+  playback smoke checklist (ported from streamxs) run end-to-end; PLAN/
+  DECISIONS updated; Day 0 sign-off against brief §7 incl. the §9 "verify
+  HDR for real" guardrail.
+
+Out of scope, seams only (brief §7): playback queue, online fetching,
+probing, media detail. macOS shell + pl-vulkan/MoltenVK session and the
+mpv-side render-API hwdec phase are the first post-Day-0 workstreams.
+
+# Phase C — Day 0 build (pending B approval)
