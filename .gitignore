@@ -1,0 +1,21 @@
+# Build trees
+/build/
+/out/
+cmake-build-*/
+
+# Vendored binary artifacts (regenerate via third_party/mpv/refresh.ps1)
+third_party/mpv/bin/
+third_party/mpv/lib/
+third_party/mpv/include/
+
+# Shell build outputs
+shells/windows/**/bin/
+shells/windows/**/obj/
+
+# IDE / tooling
+.vs/
+.idea/
+*.user
+
+# Local media used for verification (never commit clips)
+testdata/local/
