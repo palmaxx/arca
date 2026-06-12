@@ -33,18 +33,93 @@
                 <MenuFlyoutSeparator />
                 <MenuFlyoutItem Text="Exit" Click="OnExit" />
             </MenuBarItem>
+            <MenuBarItem Title="Library">
+                <MenuFlyoutItem Text="Add library…" Click="OnAddLibrary" />
+                <MenuFlyoutItem Text="Rescan selected" Click="OnRescanLibrary" />
+                <MenuFlyoutItem Text="Remove selected" Click="OnRemoveLibrary" />
+                <MenuFlyoutSeparator />
+                <ToggleMenuFlyoutItem x:Name="SidebarToggle" Text="Show sidebar"
+                                      IsChecked="True" Click="OnToggleSidebar" />
+            </MenuBarItem>
         </MenuBar>
 
-        <Grid Grid.Row="1" Background="Black">
-            <SwapChainPanel x:Name="VideoPanel"
-                            SizeChanged="OnPanelSizeChanged"
-                            CompositionScaleChanged="OnPanelScaleChanged" />
-            <TextBlock x:Name="IdleHint"
-                       Text="File → Open…  (Ctrl+O)"
-                       Foreground="#666"
-                       FontSize="18"
-                       HorizontalAlignment="Center"
-                       VerticalAlignment="Center" />
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="SidebarColumn" Width="300" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Grid x:Name="Sidebar" Grid.Column="0" Padding="8" RowSpacing="8"
+                  Background="{ThemeResource LayerFillColorDefaultBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Libraries" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1" Content="Add…" Click="OnAddLibrary" />
+                </Grid>
+
+                <ListView Grid.Row="1" x:Name="LibraryList" MaxHeight="220"
+                          SelectionChanged="OnLibrarySelected">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="{Binding ModeGlyph}" FontSize="14"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding Display}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock Grid.Row="2" x:Name="LibraryStatus" Foreground="#888"
+                           TextWrapping="Wrap" />
+
+                <ListView Grid.Row="3" x:Name="MediaList"
+                          DoubleTapped="OnMediaDoubleTapped">
+                    <ListView.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.HeaderTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Key}" FontWeight="SemiBold" />
+                                </DataTemplate>
+                            </GroupStyle.HeaderTemplate>
+                        </GroupStyle>
+                    </ListView.GroupStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Display}"
+                                       TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <Grid Grid.Column="1" Background="Black">
+                <SwapChainPanel x:Name="VideoPanel"
+                                SizeChanged="OnPanelSizeChanged"
+                                CompositionScaleChanged="OnPanelScaleChanged" />
+                <TextBlock x:Name="IdleHint"
+                           Text="File → Open…  (Ctrl+O)   ·   Library → Add library…"
+                           Foreground="#666"
+                           FontSize="18"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+            </Grid>
         </Grid>
 
         <Grid Grid.Row="2" x:Name="TransportBar" Padding="12,8" ColumnSpacing="12">

@@ -1,7 +1,9 @@
 using Arca.Interop;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Windows.Storage.Pickers;
 
@@ -18,6 +20,7 @@ public sealed partial class MainWindow : Window
     private const string GlyphMute = "";
 
     private PlayerEngine? _engine;
+    private LibraryStore? _store;
     private readonly string? _startupFile;
     private string _currentFile = "";
     private bool _updatingSliderFromEngine;
@@ -58,8 +61,154 @@ public sealed partial class MainWindow : Window
         _engine.FileLoaded += OnEngineFileLoaded;
         _engine.PlaybackError += msg => IdleHint.Text = $"Playback error: {msg}";
 
+        try
+        {
+            string dbPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Arca", "arca.db");
+            _store = new LibraryStore(dbPath);
+            RefreshLibraries();
+        }
+        catch (Exception ex)
+        {
+            LibraryStatus.Text = $"Library DB unavailable: {ex.Message}";
+        }
+
         if (_startupFile is not null)
             LoadFile(_startupFile);
+    }
+
+    // --- library management ----------------------------------------------------
+
+    private void RefreshLibraries(long? selectId = null)
+    {
+        if (_store is null)
+            return;
+        var libs = _store.Libraries();
+        LibraryList.ItemsSource = libs;
+        if (selectId is long id)
+            LibraryList.SelectedItem = libs.FirstOrDefault(l => l.Id == id);
+        else if (libs.Count > 0)
+            LibraryList.SelectedIndex = 0;
+    }
+
+    private void OnLibrarySelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (_store is null || LibraryList.SelectedItem is not LibraryInfo lib)
+        {
+            MediaList.ItemsSource = null;
+            return;
+        }
+        var media = _store.Media(lib.Id);
+        if (lib.IsOnline)
+        {
+            // ONLINE: indexed view — items grouped by what they are.
+            var cvs = new CollectionViewSource
+            {
+                IsSourceGrouped = true,
+                Source = media
+                    .GroupBy(m => string.IsNullOrEmpty(m.GroupDisplay)
+                                      ? m.FileName : m.GroupDisplay)
+                    .OrderBy(g => g.Key)
+                    .ToList(),
+            };
+            MediaList.ItemsSource = cvs.View;
+        }
+        else
+        {
+            // OFFLINE: explorer-flat, ordered by relative path.
+            MediaList.ItemsSource = media;
+        }
+        LibraryStatus.Text = $"{lib.RootPath} · {media.Count} items ({lib.Mode})";
+    }
+
+    private async void OnAddLibrary(object sender, RoutedEventArgs e)
+    {
+        if (_store is null)
+            return;
+        var folderPicker = new FolderPicker();
+        folderPicker.FileTypeFilter.Add("*");
+        WinRT.Interop.InitializeWithWindow.Initialize(
+            folderPicker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var folder = await folderPicker.PickSingleFolderAsync();
+        if (folder is null)
+            return;
+
+        var nameBox = new TextBox { Text = folder.Name, Header = "Name" };
+        var offline = new RadioButton
+        {
+            Content = "Offline — file explorer, never goes online",
+            IsChecked = true,
+        };
+        var online = new RadioButton
+        {
+            Content = "Online — indexed and grouped (metadata fetch in a later phase)",
+        };
+        var dialog = new ContentDialog
+        {
+            Title = "Add library",
+            PrimaryButtonText = "Add",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = Root.XamlRoot,
+            Content = new StackPanel
+            {
+                Spacing = 12,
+                Children = { nameBox, offline, online },
+            },
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        long id = _store.AddLibrary(nameBox.Text.Trim(), folder.Path,
+                                    online.IsChecked == true);
+        if (id < 0)
+        {
+            LibraryStatus.Text = "Add failed (already imported?)";
+            return;
+        }
+        LibraryStatus.Text = "Scanning…";
+        var (added, removed) = await Task.Run(() => _store.Scan(id));
+        LibraryStatus.Text = $"Scan: +{added} −{removed}";
+        RefreshLibraries(id);
+    }
+
+    private async void OnRescanLibrary(object sender, RoutedEventArgs e)
+    {
+        if (_store is null || LibraryList.SelectedItem is not LibraryInfo lib)
+            return;
+        LibraryStatus.Text = "Scanning…";
+        var (added, removed) = await Task.Run(() => _store.Scan(lib.Id));
+        LibraryStatus.Text = $"Scan: +{added} −{removed}";
+        RefreshLibraries(lib.Id);
+    }
+
+    private void OnRemoveLibrary(object sender, RoutedEventArgs e)
+    {
+        if (_store is null || LibraryList.SelectedItem is not LibraryInfo lib)
+            return;
+        _store.RemoveLibrary(lib.Id);
+        MediaList.ItemsSource = null;
+        LibraryStatus.Text = $"Removed {lib.Name}";
+        RefreshLibraries();
+    }
+
+    private void OnMediaDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (_store is null || MediaList.SelectedItem is not MediaInfo media)
+            return;
+        if (_store.PathFor(media.Id) is string path)
+            LoadFile(path);
+    }
+
+    private void OnToggleSidebar(object sender, RoutedEventArgs e) =>
+        SetSidebarVisible(SidebarToggle.IsChecked);
+
+    private void SetSidebarVisible(bool visible)
+    {
+        SidebarToggle.IsChecked = visible;
+        Sidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        SidebarColumn.Width = visible ? new GridLength(300) : new GridLength(0);
     }
 
     private void LoadFile(string path)
@@ -203,6 +352,7 @@ public sealed partial class MainWindow : Window
                                       : AppWindowPresenterKind.FullScreen);
         AppMenuBar.Visibility = isFull ? Visibility.Visible : Visibility.Collapsed;
         TransportBar.Visibility = isFull ? Visibility.Visible : Visibility.Collapsed;
+        SetSidebarVisible(isFull && SidebarToggle.IsChecked);
         a.Handled = true;
     }
 
@@ -220,5 +370,7 @@ public sealed partial class MainWindow : Window
     {
         _engine?.Dispose();
         _engine = null;
+        _store?.Dispose();
+        _store = null;
     }
 }
