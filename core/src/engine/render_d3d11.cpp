@@ -6,16 +6,18 @@
 //   - BT.2020/PQ negotiation (SetColorSpace1) + HDR10 metadata, with SDR
 //     fallback when the output can't present PQ
 //   - display peak luminance from IDXGIOutput6::GetDesc1 -> TARGET_COLORSPACE
-//   - per frame: render -> CopyResource(backbuffer) -> Present(1, 0)
+//   - per frame: GetBuffer(0) -> clear -> render(D3D11_TEX) -> Present(1, 0)
 // The engine-side render context (pl-d3d11) is created and freed on the
 // render thread itself.
 //
-// Deviation from the reference host (found empirically in M0): the engine
-// keeps its wrap of the last-rendered texture alive across frames, so
-// wrapping the swapchain backbuffer directly blocks ResizeBuffers
-// (DXGI_ERROR_INVALID_CALL). We render into a core-owned intermediate
-// texture and copy to the backbuffer — one GPU copy buys an always-safe
-// resize path.
+// The backbuffer is wrapped directly: since engine fix P5b.1 (fork commit
+// 008434c) the renderer releases its wrap of the host texture before
+// mpv_render_context_render returns, so no reference survives the frame and
+// ResizeBuffers is always legal. (ADR-004's intermediate-texture indirection
+// was the workaround for the pre-fix engine; retired.) Border clearing
+// stays core-side via a transient backbuffer RTV — the engine runs
+// --border-background=none because wrapped R10G10B10A2 lacks blit_dst on
+// some vendors (libplacebo cap model; unchanged by P5b.1).
 
 #include "engine_internal.h"
 
@@ -56,9 +58,6 @@ struct arca_render_session {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<IDXGISwapChain3> swapchain;
-    ComPtr<ID3D11Texture2D> video_tex;  // engine render target (see header)
-    ComPtr<ID3D11RenderTargetView> video_rtv;
-    int video_tex_w = 0, video_tex_h = 0;
     mpv_render_context *rctx = nullptr;
 
     std::thread thread;
@@ -299,40 +298,6 @@ bool create_render_context(arca_render_session *s) {
     return true;
 }
 
-// (Re)creates the intermediate video texture at the current swapchain size.
-bool ensure_video_texture(arca_render_session *s) {
-    if (s->video_tex && s->video_tex_w == s->width && s->video_tex_h == s->height)
-        return true;
-    s->video_rtv.Reset();
-    s->video_tex.Reset();
-
-    D3D11_TEXTURE2D_DESC desc{};
-    desc.Width = static_cast<UINT>(s->width);
-    desc.Height = static_cast<UINT>(s->height);
-    desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_R10G10B10A2_UNORM;  // matches the swapchain
-    desc.SampleDesc.Count = 1;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_UNORDERED_ACCESS;
-    HRESULT hr = s->device->CreateTexture2D(&desc, nullptr, &s->video_tex);
-    if (FAILED(hr)) {
-        logf(s->engine, "[arca-render] CreateTexture2D(%dx%d) failed: 0x%08lx",
-             s->width, s->height, hr);
-        return false;
-    }
-    hr = s->device->CreateRenderTargetView(s->video_tex.Get(), nullptr,
-                                           &s->video_rtv);
-    if (FAILED(hr)) {
-        logf(s->engine, "[arca-render] CreateRenderTargetView failed: 0x%08lx", hr);
-        s->video_tex.Reset();
-        return false;
-    }
-    s->video_tex_w = s->width;
-    s->video_tex_h = s->height;
-    return true;
-}
-
 void render_frame(arca_render_session *s, bool force_redraw) {
     uint64_t flags = mpv_render_context_update(s->rctx);
     bool have_frame = (flags & MPV_RENDER_UPDATE_FRAME) != 0;
@@ -342,8 +307,9 @@ void render_frame(arca_render_session *s, bool force_redraw) {
     if (s->resize_pending.exchange(false)) {
         int w = s->pending_w.load(), h = s->pending_h.load();
         if (w > 0 && h > 0 && (w != s->width || h != s->height)) {
-            // Safe: only the intermediate texture is ever wrapped by the
-            // engine; nothing holds backbuffer references between frames.
+            // Legal even though we wrap the backbuffer: P5b.1 guarantees the
+            // engine drops its wrap before render returns, and our own
+            // backbuffer/RTV references are frame-scoped.
             HRESULT hr = s->swapchain->ResizeBuffers(0, w, h,
                                                      DXGI_FORMAT_UNKNOWN, 0);
             if (FAILED(hr)) {
@@ -359,16 +325,21 @@ void render_frame(arca_render_session *s, bool force_redraw) {
     if (s->scale_pending.exchange(false))
         apply_scale(s);
 
-    if (!ensure_video_texture(s))
+    ComPtr<ID3D11Texture2D> backbuffer;
+    if (FAILED(s->swapchain->GetBuffer(0, IID_PPV_ARGS(&backbuffer))))
         return;
 
     // The core owns border clearing (engine runs --border-background=none;
-    // see ensure_video_texture rationale).
-    const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-    s->context->ClearRenderTargetView(s->video_rtv.Get(), black);
+    // see header note). Transient RTV: released at frame scope.
+    ComPtr<ID3D11RenderTargetView> rtv;
+    if (SUCCEEDED(s->device->CreateRenderTargetView(backbuffer.Get(), nullptr,
+                                                    &rtv))) {
+        const float black[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+        s->context->ClearRenderTargetView(rtv.Get(), black);
+    }
 
     mpv_d3d11_tex tex{};
-    tex.tex = s->video_tex.Get();
+    tex.tex = backbuffer.Get();
     tex.w = s->width;
     tex.h = s->height;
 
@@ -391,10 +362,6 @@ void render_frame(arca_render_session *s, bool force_redraw) {
         return;
     }
 
-    ComPtr<ID3D11Texture2D> backbuffer;
-    if (FAILED(s->swapchain->GetBuffer(0, IID_PPV_ARGS(&backbuffer))))
-        return;
-    s->context->CopyResource(backbuffer.Get(), s->video_tex.Get());
     s->swapchain->Present(1, 0);
 }
 

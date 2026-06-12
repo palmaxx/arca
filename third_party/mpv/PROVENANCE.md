@@ -2,9 +2,9 @@
 
 - Source fork worktree: `C:\DEV\ai-dev\projects\mpv-wt-hdr`
 - Branch: `gpu-next-render-api-hdr`
-- Commit: `304f611f5ab7c3d0073550421e0e9cc03363dd44`
-- Built: MSYS2 UCRT64 (`ninja -C bld`); DLL timestamp 2026-06-04 13:39
-- Vendored: 2026-06-12 00:44 by refresh.ps1
+- Commit: `dc7b021248c3d3b3d7e015f55eb27c5158c39027`
+- Built: MSYS2 UCRT64 (`ninja -C bld`); DLL timestamp 2026-06-12 18:11
+- Vendored: 2026-06-13 01:10 by refresh.ps1
 - Exports in mpv.lib: 54
 - MSYS2 UCRT64 runtime closure: 110 DLLs (load-time deps via ldd;
   includes libdovi = Dolby Vision RPU support in libplacebo)

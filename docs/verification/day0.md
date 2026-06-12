@@ -68,6 +68,19 @@ Conclusions baked into the core:
   final seek, **zero VO/decoder drops across the entire run incl. seeks**.
 - Audio confirmed: AC-3 5.1 (`5.1(side)`, 48 kHz float) through **WASAPI**.
 
+## Addendum (2026-06-13) — engine fix P5b.1 landed; direct backbuffer path re-validated
+
+The wrap-lifetime defect behind ADR-004 was fixed at source (fork commits
+`008434c` + `dc7b021`, all fork gates green). ARCA re-vendored the engine
+and retired the intermediate-texture indirection: the render session now
+wraps the backbuffer directly with a transient RTV for the core-side border
+clear. Re-validation on the RTX 4060: mid-playback resize applies cleanly
+(1584x861 → 1264x681), DV8.1 4K24 zero drops + seek test PASS, 4K60 zero
+steady-state drops (29-frame warmup, flat for 14s warm), `lib-verify`
+13/13, shell panel path playing DV with `hdr_active=1`. The `blit_dst`
+border-clear workaround (`--border-background=none` + core clear) remains —
+that limitation is libplacebo-side and untouched by P5b.1.
+
 ## Remaining for full M2 sign-off (user-run)
 
 - [ ] DV **profile 5** sample through `hdr-verify` (no local sample; not

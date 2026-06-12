@@ -26,9 +26,11 @@ with dovi_tool + MSYS2 ffmpeg per `docs/verification/day0.md`).
 
 ## Load-bearing constraints (violating these breaks verified behavior)
 
-- **Render sessions wrap a core-owned intermediate texture, never the
-  swapchain backbuffer** (ADR-004: engine holds wraps across frames →
-  `ResizeBuffers` would fail).
+- **The vendored engine must be at/past fork commit `008434c` (P5b.1).**
+  Render sessions wrap the swapchain backbuffer directly; that is only
+  legal because P5b.1 releases the engine's wrap before render returns.
+  An older `libmpv-2.dll` breaks every resize (`ResizeBuffers` denied by
+  the engine's held reference — retired ADR-004 has the history).
 - **The engine runs `--border-background=none`; the core clears its own
   target** (wrapped R10G10B10A2 lacks `blit_dst` on NVIDIA).
 - **Tone-map target = display peak from `IDXGIOutput6`, located by HMONITOR

@@ -147,7 +147,14 @@ pull the mpv-side render-API hwdec phase forward before Day 0 sign-off
 
 ## ADR-004 — Render into an intermediate texture, not the swapchain backbuffer
 
-**Date:** 2026-06-12 · **Status:** Accepted (M0 empirical finding)
+**Date:** 2026-06-12 · **Status:** **RETIRED 2026-06-13** — superseded by the
+engine-side fix (see "Upstream status" below). The core now wraps the
+swapchain backbuffer directly (`GetBuffer → clear → render → Present`);
+border clearing moved to a transient backbuffer RTV. Re-validated: resize
+mid-playback applies cleanly, zero steady-state drops on 4K24/4K60, seek
+test PASS, shell panel path green. **Floor requirement:** the vendored
+engine must be at or past fork commit `008434c` (P5b.1) — older DLLs
+reintroduce the `ResizeBuffers` failure. Historical rationale kept below.
 
 **Context:** The fork's reference host wraps the swapchain backbuffer
 directly (`GetBuffer → render → Present`) and assumes no backbuffer
@@ -168,10 +175,12 @@ display-peak rule are unchanged from the validated sequence.
 stops playback first — freeing the render context mid-file otherwise
 surfaces a spurious "video output initialization failed" engine error.
 
-**Upstream status (2026-06-12):** the root cause is an engine-side defect
-(the fork's d3d11 backend holds its host-texture wrap across render calls).
-A source fix is spec'd as **P5b.1** in the fork:
-`C:\DEV\ai-dev\projects\mpv-src\_refactor\plan2-hdr-render-api\hdr-phase5b-assessment.md`
-(not yet implemented — needs that repo's validation gates). Once it lands
-and `refresh.ps1` re-vendors the DLL, the intermediate-texture indirection
-here may be retired to the direct-backbuffer sequence; until then it stays.
+**Upstream status (2026-06-13):** the root cause was an engine-side defect
+(the fork's d3d11 backend held its host-texture wrap across render calls).
+The source fix **landed and gated**: fork commits `008434c` (P5b.1,
+caller-owned wraps released by end of render, incl. the error-clear gate)
++ `dc7b021` (public lifetime-contract docs); spec/record:
+`C:\DEV\ai-dev\projects\mpv-src\_refactor\plan2-hdr-render-api\hdr-phase5b-assessment.md`.
+ARCA re-vendored at `dc7b021` and retired the indirection the same day.
+Note the `--border-background=none` + core-side clear remains — that is
+the separate libplacebo `blit_dst` limitation, unchanged by P5b.1.

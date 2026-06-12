@@ -33,8 +33,13 @@ Copy-Item $dll (Join-Path $root 'bin\') -Force
 # The fork's libmpv links FFmpeg/libplacebo/etc. dynamically from the MSYS2
 # UCRT64 runtime; enumerate the load-time closure with ldd and vendor it so
 # the player is self-contained (incl. libdovi - Dolby Vision RPU support).
+# ldd must run against the SOURCE DLL in the fork worktree: against the
+# vendored copy, Windows resolves every dependency from the already-vendored
+# closure sitting next to it (module dir precedes PATH), no path matches
+# /ucrt64/bin/, and the sanity check below trips on every re-refresh.
 $env:MSYSTEM = 'UCRT64'
-$lddOut = C:\msys64\usr\bin\bash.exe -lc 'ldd /c/DEV/ARCA/third_party/mpv/bin/libmpv-2.dll'
+$dllMsys = '/' + ($dll -replace ':', '' -replace '\\', '/')
+$lddOut = C:\msys64\usr\bin\bash.exe -lc "ldd '$dllMsys'"
 $deps = $lddOut | ForEach-Object {
     if ($_ -match '=>\s+(/ucrt64/bin/\S+\.dll)') { $Matches[1] }
 } | Sort-Object -Unique
