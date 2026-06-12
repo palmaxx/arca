@@ -17,6 +17,7 @@
 #include <arca/arca_render.h>
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 
 #include <atomic>
@@ -98,7 +99,10 @@ static bool run_seek_test() {
         return false;
     }
 
-    const double tolerance = 15.0;  // keyframe seeks land on keyframes
+    // Keyframe seeks land on keyframes; scale the acceptance window to the
+    // clip so short clips still verify something (15s on a 10s clip would
+    // pass vacuously and then race the in-flight final seek).
+    const double tolerance = std::min(15.0, std::max(1.5, duration * 0.05));
     const double targets[] = {duration * 0.3, duration * 0.05,
                               duration * 0.9, 1.0};
     for (double target : targets) {
