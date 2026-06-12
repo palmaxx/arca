@@ -167,3 +167,11 @@ display-peak rule are unchanged from the validated sequence.
 **Also fixed under this ADR:** destroying a render session (or engine) now
 stops playback first — freeing the render context mid-file otherwise
 surfaces a spurious "video output initialization failed" engine error.
+
+**Upstream status (2026-06-12):** the root cause is an engine-side defect
+(the fork's d3d11 backend holds its host-texture wrap across render calls).
+A source fix is spec'd as **P5b.1** in the fork:
+`C:\DEV\ai-dev\projects\mpv-src\_refactor\plan2-hdr-render-api\hdr-phase5b-assessment.md`
+(not yet implemented — needs that repo's validation gates). Once it lands
+and `refresh.ps1` re-vendors the DLL, the intermediate-texture indirection
+here may be retired to the direct-backbuffer sequence; until then it stays.
