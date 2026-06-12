@@ -59,10 +59,21 @@ Conclusions baked into the core:
    `--border-background=none`; the core clears its own target
    (vendor-caps-proof).
 
-## Remaining for full M2 sign-off
+## M2b — seek robustness + audio (2026-06-12): **PASS**
 
-- [ ] DV profile 5 sample (user-provided) through `hdr-verify`.
-- [ ] On-display visual parity vs windowed mpv (user-run, same adapter).
-- [ ] Seek-robustness automated pass (planned `--seek-test` in hdr-verify).
-- [ ] Audio-present content sanity (golden clip + synthetics are video-only;
-      Departed run exercised audio path implicitly — formal check pending).
+`hdr-verify --seek-test` on the 2h16m compressed DV8.1 Departed
+(`G:\dv_departed\The.Departed.2006_compressed_DV.mkv`):
+- Absolute seeks to 30% (2723.6s), 5% (453.9s), 90% (8170.9s), and 1.0s —
+  **all landed exactly on target**, playback resumed advancing after the
+  final seek, **zero VO/decoder drops across the entire run incl. seeks**.
+- Audio confirmed: AC-3 5.1 (`5.1(side)`, 48 kHz float) through **WASAPI**.
+
+## Remaining for full M2 sign-off (user-run)
+
+- [ ] DV **profile 5** sample through `hdr-verify` (no local sample; not
+      synthesizable — needs real IPT-PQ-c2 content).
+- [ ] On-display **visual parity** vs windowed mpv: run side-by-side
+      `hdr-verify <clip>` and `mpv --vo=gpu-next --gpu-api=d3d11
+      --target-colorspace-hint=yes <clip>` (fork build in
+      `mpv-wt-hdr\bld`) on the HDR display. Screenshots are not valid
+      evidence; judge on-display (fork Phase-5 rule).

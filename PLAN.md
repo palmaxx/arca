@@ -8,8 +8,8 @@
 | Phase | State | Date |
 |---|---|---|
 | **A — Discovery** | ✅ Approved (with direction: quality-first §3 criterion; hwdec deferral accepted contingent on DV/RPU verification) | 2026-06-11 |
-| **B — Plan & scaffold** | ✅ Drafted — ADR-001/002/003 resolved, layout + milestones below. **Awaiting checkpoint approval.** | 2026-06-11 |
-| C — Day 0 build | Not started (blocked on B approval) | |
+| **B — Plan & scaffold** | ✅ Approved (user set the Day-0 implementation goal) | 2026-06-12 |
+| **C — Day 0 build** | ✅ **All milestones done & gated** (M0, M1, M2a/M2b automated, M3, M4, M5). Two user-run checks remain in [docs/verification/day0.md](docs/verification/day0.md): DV profile-5 sample, on-display visual parity vs windowed mpv. | 2026-06-12 |
 
 ---
 
@@ -269,28 +269,50 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
   4.926108 — the fork's validated values), SW decode, 0 steady-state drops
   (~36-frame startup transient → M2). Resize + teardown hardened (ADR-004).
   MinGW-DLL↔MSVC link proven (§6 risk 5 retired).
-- **M1 — WinUI3 shell embed.** Fluss-derived shell hosts the core via
-  `SwapChainPanel` (panel native ptr → core; core owns swapchain + render
-  thread + present). Keyboard controls, scrubbing, File→Open single file.
-  *Gate:* 4K HDR plays in-shell with controls; HDR verified on-display, not
-  via screenshots (PLAN §1 host requirement 2).
-- **M2 — Playback verification gate (user-run, ADR-003).** HDR10 metadata +
-  peak negotiation; **DV profile 5 + 8 RPU passthrough**; SW-decode headroom
-  on 4K24/4K60 HEVC; seek robustness. Results →
-  `docs/verification/day0.md`. *Gate failure ⇒ ADR-003 fallback (pull hwdec
-  forward) before continuing.*
-- **M3 — DB + library management.** SQLite schema v1 (libraries, media items
-  w/ content-derived IDs, mode field per Fluss `MetadataMode`); import /
-  view / delete a library folder; play single files from the folder view.
-- **M4 — Offline/Online hard seam (scaffold).** Two architecturally distinct
-  paths per brief §7: offline = explorer-like view whose code path links no
-  network facility at all (enforced at the module boundary); online = items
-  indexed/grouped by kind with a stubbed enrichment queue (no fetching yet).
-  Probing, queue, media-detail remain seams only.
-- **M5 — Day 0 wrap.** Keyboard map + menu polish, status surfacing,
-  playback smoke checklist (ported from streamxs) run end-to-end; PLAN/
-  DECISIONS updated; Day 0 sign-off against brief §7 incl. the §9 "verify
-  HDR for real" guardrail.
+- **M1 — WinUI3 shell embed. ✅ DONE 2026-06-12.** Fresh WinUI3 shell
+  (unpackaged WinAppSDK 1.8) hosts the core via `SwapChainPanel`
+  (composition swapchain created core-side, `SetSwapChain` on the UI
+  thread, inverse composition-scale transform). Transport bar with live
+  scrub, keyboard map (Space/←→/Shift/↑↓/M/F11), File→Open, CLI autoload.
+  *Gate result:* DV8.1 file reaches Playing in-shell, `hdr_active=1`,
+  271 nits, verified via window-title status.
+- **M2 — Playback verification gate (ADR-003). ✅ automated part DONE
+  2026-06-12** (pulled M2a forward, before the shell): **DV profile 8.1 RPU
+  passthrough = GO** on real 75 Mbps content + dovi_tool-synthesized
+  regression clips; SW-decode headroom = zero decoder drops everywhere
+  incl. 4K60; **seek test PASS** (4 absolute seeks across 2h16m, exact
+  landings, playback resumes); audio AC-3 5.1 via WASAPI. Hybrid-GPU
+  fixes fell out of the data (high-perf adapter, HMONITOR-based peak
+  query, core-side border clear). Remaining user-run: DV P5 sample,
+  on-display visual parity. Full record:
+  [docs/verification/day0.md](docs/verification/day0.md).
+- **M3 — DB + library management. ✅ DONE 2026-06-12.** SQLite 3.51.3
+  compiled in; schema v1 (libraries, content-derived media IDs,
+  `online_media_info` queue). Import/browse/rescan/remove in the shell
+  sidebar + `db-seed` CLI; double-click plays from the folder view.
+  *Gate:* `lib-verify` 13/13 PASS.
+- **M4 — Offline/Online hard seam (scaffold). ✅ DONE 2026-06-12.**
+  Offline = explorer-flat view, scan is pure filesystem enumeration; the
+  core links no networking facility at all. Online = local filename
+  parse → grouped-by-identity view (series under SxxEyy headers, movies
+  by title+year) + `enrich_status='pending'` queue awaiting the future
+  fetcher phase. Probing, playback queue, media-detail remain seams only.
+- **M5 — Day 0 wrap. ✅ DONE 2026-06-12.** README, repo CLAUDE.md (build +
+  load-bearing constraints), smoke checklist ported from streamxs
+  ([docs/verification/smoke-checklist.md](docs/verification/smoke-checklist.md)),
+  verification record finalized, PLAN/DECISIONS current.
+
+## Post-Day-0 backlog (next workstreams, in rough order)
+
+1. User-run M2 closure (DV P5 + on-display parity) — then ADR-003 stands.
+2. mpv-side render-API **hwdec** phase (d3d11va through `pl-d3d11`).
+3. Probing + thumbnails (ffprobe/ffmpeg vendoring; seams exist in
+   `core/src/media/`).
+4. Online metadata fetcher consuming the pending queue (TMDB/TVDB; port
+   Fluss/streamxs provider behavior).
+5. Playback queue; media-detail page; FTS5 search; settings persistence.
+6. macOS shell: SwiftUI + `pl-vulkan`/MoltenVK session (core API is ready);
+   native Metal backend is Mac-resident work.
 
 Out of scope, seams only (brief §7): playback queue, online fetching,
 probing, media detail. macOS shell + pl-vulkan/MoltenVK session and the

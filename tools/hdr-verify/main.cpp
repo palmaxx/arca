@@ -66,6 +66,9 @@ static void dump_diagnostics(const char *label) {
     dump_property("video-params");
     dump_property("video-out-params");
     dump_property("hwdec-current");
+    dump_property("audio-codec");
+    dump_property("audio-params");
+    dump_property("current-ao");
     dump_property("frame-drop-count");
     dump_property("vo-delayed-frame-count");
     dump_property("estimated-vf-fps");
@@ -78,6 +81,52 @@ static void dump_diagnostics(const char *label) {
                     info.display_min_nits);
     }
     std::fflush(stdout);
+}
+
+// Seek-robustness pass (M2 gate): absolute seeks across the timeline, each
+// verified to land near its target (keyframe tolerance) with playback alive
+// afterwards. Blocking poll is fine here: the render thread lives in the
+// core and keeps presenting regardless.
+static bool run_seek_test() {
+    double duration = arca_engine_duration(g_engine);
+    for (int i = 0; i < 100 && duration <= 0; i++) {
+        Sleep(100);
+        duration = arca_engine_duration(g_engine);
+    }
+    if (duration <= 0) {
+        std::printf("seek-test: FAIL (no duration)\n");
+        return false;
+    }
+
+    const double tolerance = 15.0;  // keyframe seeks land on keyframes
+    const double targets[] = {duration * 0.3, duration * 0.05,
+                              duration * 0.9, 1.0};
+    for (double target : targets) {
+        arca_engine_seek_absolute(g_engine, target);
+        bool landed = false;
+        for (int i = 0; i < 60 && !landed; i++) {  // up to 3s per seek
+            Sleep(50);
+            double pos = arca_engine_position(g_engine);
+            landed = pos >= 0 && std::abs(pos - target) <= tolerance;
+            if (g_error.load())
+                break;
+        }
+        std::printf("  seek -> %.1fs: %s (pos %.1fs)\n", target,
+                    landed ? "ok" : "FAIL", arca_engine_position(g_engine));
+        if (!landed || g_error.load()) {
+            std::printf("seek-test: FAIL\n");
+            return false;
+        }
+    }
+
+    // Playback must keep advancing after the final seek.
+    double before = arca_engine_position(g_engine);
+    Sleep(1500);
+    double after = arca_engine_position(g_engine);
+    bool advancing = after > before;
+    std::printf("seek-test: %s (resumed %.1fs -> %.1fs)\n",
+                advancing ? "PASS" : "FAIL", before, after);
+    return advancing;
 }
 
 static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -107,17 +156,20 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 int main(int argc, char **argv) {
     const char *clip = nullptr;
     int run_seconds = 0;
+    bool seek_test = false;
     for (int i = 1; i < argc; i++) {
         if (!std::strcmp(argv[i], "--seconds") && i + 1 < argc)
             run_seconds = std::atoi(argv[++i]);
         else if (!std::strcmp(argv[i], "--verbose"))
             g_verbose = true;
+        else if (!std::strcmp(argv[i], "--seek-test"))
+            seek_test = true;
         else if (!clip)
             clip = argv[i];
     }
     if (!clip) {
-        std::fprintf(stderr,
-                     "usage: hdr-verify <clip> [--seconds N] [--verbose]\n");
+        std::fprintf(stderr, "usage: hdr-verify <clip> [--seconds N] "
+                             "[--seek-test] [--verbose]\n");
         return 2;
     }
 
@@ -180,6 +232,8 @@ int main(int argc, char **argv) {
         if (g_loaded.load() && !dumped) {
             dumped = true;
             dump_diagnostics("after load");
+            if (seek_test && !run_seek_test())
+                g_error.store(true);
         }
 
         ULONGLONG elapsed_ms = GetTickCount64() - start;
