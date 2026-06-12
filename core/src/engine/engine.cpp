@@ -26,6 +26,7 @@ arca_status from_mpv(int err) {
 // %LOCALAPPDATA%\Arca\cache\shaders, created on demand. Returns false if the
 // location can't be resolved/created (engine then just runs uncached).
 bool expand_cache_dir(char *buf, size_t len) {
+    #pragma warning(suppress : 4996)
     const char *base = std::getenv("LOCALAPPDATA");
     if (!base)
         return false;

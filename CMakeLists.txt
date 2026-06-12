@@ -24,3 +24,5 @@ set_target_properties(libmpv PROPERTIES
 
 add_subdirectory(core)
 add_subdirectory(tools/hdr-verify)
+add_subdirectory(tools/lib-verify)
+add_subdirectory(tools/db-seed)
