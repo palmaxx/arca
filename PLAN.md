@@ -305,7 +305,10 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
 ## Post-Day-0 backlog (next workstreams, in rough order)
 
 1. User-run M2 closure (DV P5 + on-display parity) — then ADR-003 stands.
-2. mpv-side render-API **hwdec** phase (d3d11va through `pl-d3d11`).
+2. mpv-side render-API **hwdec** phase (d3d11va through `pl-d3d11`) — planned
+   in the fork at `_refactor/plan2-hdr-render-api/hdr-phase7-hwdec-plan.md`
+   (D3D11 first; render device == decode device, so it mirrors the GL
+   F-phase). Landing it retires ADR-003 here (flip the engine off `hwdec=no`).
 3. Probing + thumbnails (ffprobe/ffmpeg vendoring; seams exist in
    `core/src/media/`).
 4. Online metadata fetcher consuming the pending queue (TMDB/TVDB; port

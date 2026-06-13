@@ -298,32 +298,42 @@ bool create_render_context(arca_render_session *s) {
     return true;
 }
 
-void render_frame(arca_render_session *s, bool force_redraw) {
+// Applies a pending swapchain resize. Returns true if the backbuffer geometry
+// changed, so the caller repaints the resized surface even with no new frame.
+bool apply_pending_resize(arca_render_session *s) {
+    if (!s->resize_pending.exchange(false))
+        return false;
+    int w = s->pending_w.load(), h = s->pending_h.load();
+    if (w <= 0 || h <= 0 || (w == s->width && h == s->height))
+        return false;
+    // Legal even though we wrap the backbuffer: P5b.1 guarantees the engine
+    // drops its wrap before render returns, and our own backbuffer/RTV
+    // references are frame-scoped.
+    HRESULT hr = s->swapchain->ResizeBuffers(0, w, h, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr)) {
+        logf(s->engine, "[arca-render] ResizeBuffers(%dx%d) failed: 0x%08lx",
+             w, h, hr);
+        return false;
+    }
+    s->width = w;
+    s->height = h;
+    query_display_hdr(s);  // peak can differ if the window moved monitors
+    return true;
+}
+
+void render_frame(arca_render_session *s) {
+    // Apply pending geometry changes before deciding whether to render: a
+    // resize or rescale while paused must still repaint (and a rescale only
+    // takes visible effect on the next Present), so both force a frame.
+    bool resized = apply_pending_resize(s);
+    bool rescaled = s->scale_pending.exchange(false);
+    if (rescaled)
+        apply_scale(s);
+
     uint64_t flags = mpv_render_context_update(s->rctx);
     bool have_frame = (flags & MPV_RENDER_UPDATE_FRAME) != 0;
-    if (!have_frame && !force_redraw)
+    if (!have_frame && !resized && !rescaled)
         return;
-
-    if (s->resize_pending.exchange(false)) {
-        int w = s->pending_w.load(), h = s->pending_h.load();
-        if (w > 0 && h > 0 && (w != s->width || h != s->height)) {
-            // Legal even though we wrap the backbuffer: P5b.1 guarantees the
-            // engine drops its wrap before render returns, and our own
-            // backbuffer/RTV references are frame-scoped.
-            HRESULT hr = s->swapchain->ResizeBuffers(0, w, h,
-                                                     DXGI_FORMAT_UNKNOWN, 0);
-            if (FAILED(hr)) {
-                logf(s->engine, "[arca-render] ResizeBuffers(%dx%d) failed: "
-                                "0x%08lx", w, h, hr);
-            } else {
-                s->width = w;
-                s->height = h;
-                query_display_hdr(s);
-            }
-        }
-    }
-    if (s->scale_pending.exchange(false))
-        apply_scale(s);
 
     ComPtr<ID3D11Texture2D> backbuffer;
     if (FAILED(s->swapchain->GetBuffer(0, IID_PPV_ARGS(&backbuffer))))
@@ -385,7 +395,7 @@ void render_thread(arca_render_session *s, std::promise<bool> ready) {
         }
         if (s->quit.load())
             break;
-        render_frame(s, s->resize_pending.load());
+        render_frame(s);
     }
 
     // The render context was created on this thread; free it here too,
