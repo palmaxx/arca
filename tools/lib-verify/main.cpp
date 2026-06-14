@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -28,6 +29,20 @@ static int g_failures = 0;
 
 static bool contains(const char *json, const char *needle) {
     return json && std::strstr(json, needle) != nullptr;
+}
+
+static std::vector<std::string> extract_ids(const char *json) {
+    std::vector<std::string> ids;
+    const char *p = json;
+    while (p && (p = std::strstr(p, "\"id\":\"")) != nullptr) {
+        p += 6;
+        const char *end = std::strchr(p, '"');
+        if (!end)
+            break;
+        ids.emplace_back(p, end - p);
+        p = end + 1;
+    }
+    return ids;
 }
 
 static void touch(const fs::path &p, const char *content = "x") {
@@ -96,14 +111,64 @@ int main() {
           "online media list: movie title/year parsed");
 
     // Path lookup round-trip for the first offline item id.
-    std::string id;
-    if (const char *p = std::strstr(off_media, "\"id\":\"")) {
-        p += 6;
-        id.assign(p, std::strchr(p, '"') - p);
-    }
+    auto off_ids = extract_ids(off_media);
+    auto on_ids = extract_ids(on_media);
+    std::string id = off_ids.empty() ? std::string() : off_ids[0];
     char *path = arca_media_get_path(db, id.c_str());
     CHECK(path && fs::exists(fs::path(std::u8string(path, path + std::strlen(path)))), "media path lookup resolves");
     arca_string_free(path);
+
+    char *root_children = arca_library_children_json(db, off, "", ARCA_SORT_TITLE_ASC);
+    CHECK(contains(root_children, "\"folders\"") && contains(root_children, "\"name\":\"clips\"") &&
+              !contains(root_children, "\"fileName\":\"a.mkv\""),
+          "children root: folder only at top level");
+    arca_string_free(root_children);
+
+    char *clip_children = arca_library_children_json(db, off, "clips", ARCA_SORT_TITLE_ASC);
+    CHECK(contains(clip_children, "\"fileName\":\"a.mkv\"") &&
+              contains(clip_children, "\"fileName\":\"b.mp4\""),
+          "children folder: immediate media listed");
+    arca_string_free(clip_children);
+
+    char *search = arca_media_search_json(db, "departed", 0, 10);
+    CHECK(contains(search, "The Departed") && contains(search, "\"libraryName\":\"Online\""),
+          "fts search: finds online parsed title");
+    arca_string_free(search);
+
+    if (!on_ids.empty()) {
+        CHECK(arca_progress_save(db, on_ids[0].c_str(), 42.0, 120.0, false) == ARCA_OK,
+              "progress save");
+        CHECK(arca_progress_resume_seconds(db, on_ids[0].c_str()) >= 41.9,
+              "progress resume point");
+        char *continue_json = arca_progress_continue_watching_json(db, 5);
+        CHECK(contains(continue_json, "\"positionSeconds\":42") &&
+                  contains(continue_json, on_ids[0].c_str()),
+              "continue watching JSON");
+        arca_string_free(continue_json);
+    }
+
+    arca_queue *queue = arca_queue_create(db);
+    CHECK(queue != nullptr, "queue create");
+    if (queue && on_ids.size() >= 2) {
+        std::string queue_ids = "[\"" + on_ids[0] + "\",\"" + on_ids[1] + "\"]";
+        CHECK(arca_queue_set_from_media_ids_json(queue, queue_ids.c_str(), on_ids[0].c_str()) == ARCA_OK,
+              "queue set from JSON ids");
+        char *queue_json = arca_queue_list_json(queue);
+        CHECK(contains(queue_json, "\"currentIndex\":0") &&
+                  contains(queue_json, "\"isCurrent\":true"),
+              "queue list JSON marks current");
+        arca_string_free(queue_json);
+        CHECK(arca_queue_next(queue) == ARCA_OK, "queue next");
+        char *current_id = arca_queue_current_media_id(queue);
+        CHECK(current_id && std::strcmp(current_id, on_ids[1].c_str()) == 0,
+              "queue current after next");
+        arca_string_free(current_id);
+        CHECK(arca_queue_previous(queue) == ARCA_OK, "queue previous");
+        CHECK(arca_queue_set_shuffle(queue, true) == ARCA_OK && arca_queue_shuffle(queue),
+              "queue shuffle toggle");
+    }
+    arca_queue_destroy(queue);
+
     arca_string_free(off_media);
     arca_string_free(on_media);
 

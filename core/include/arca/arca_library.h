@@ -29,6 +29,19 @@ typedef enum arca_library_mode {
     ARCA_LIB_ONLINE = 1,
 } arca_library_mode;
 
+typedef enum arca_sort_order {
+    ARCA_SORT_TITLE_ASC = 0,
+    ARCA_SORT_TITLE_DESC = 1,
+    ARCA_SORT_ADDED_DESC = 2,
+    ARCA_SORT_ADDED_ASC = 3,
+    ARCA_SORT_MODIFIED_DESC = 4,
+    ARCA_SORT_MODIFIED_ASC = 5,
+    ARCA_SORT_SIZE_DESC = 6,
+    ARCA_SORT_SIZE_ASC = 7,
+} arca_sort_order;
+
+typedef struct arca_queue arca_queue;
+
 // Opens (creating/migrating as needed) the library database.
 ARCA_API arca_db *arca_db_open(const char *db_path_utf8);
 ARCA_API void arca_db_close(arca_db *db);
@@ -50,14 +63,55 @@ ARCA_API char *arca_library_list_json(arca_db *db);
 ARCA_API arca_status arca_library_scan(arca_db *db, int64_t library_id,
                                        int *out_added, int *out_removed);
 
-// JSON, ordered by relPath:
-// [{"id":"…","fileName":"…","relPath":"…","size":123,
-//   "title":"…","year":2006,"season":1,"episode":2,"groupKey":"…"}]
-// (title/year/season/episode/groupKey only present for ONLINE libraries.)
+// JSON media object fields:
+// {"id":"…","fileName":"…","relPath":"…","folderRelPath":"…","size":123,
+//  "modifiedUtc":123,"addedUtc":123,"libraryId":1,"libraryName":"…",
+//  "mode":"offline"}
+// ONLINE libraries may additionally include title/year/season/episode/groupKey.
 ARCA_API char *arca_media_list_json(arca_db *db, int64_t library_id);
+
+// JSON:
+// {"folderRelPath":"…",
+//  "folders":[{"name":"Season 1","relPath":"Show/Season 1","itemCount":8}],
+//  "media":[{media object, immediate children only}]}
+ARCA_API char *arca_library_children_json(arca_db *db, int64_t library_id,
+                                          const char *folder_rel_path_utf8,
+                                          arca_sort_order sort);
+
+// JSON: media objects joined with libraryId/libraryName/mode.
+// Empty/NULL query returns [].
+ARCA_API char *arca_media_search_json(arca_db *db, const char *query_utf8,
+                                      int64_t library_id_or_zero, int limit);
 
 // Absolute filesystem path for playback; NULL if unknown id.
 ARCA_API char *arca_media_get_path(arca_db *db, const char *media_id);
+
+// Resume/continue-watching state. `resume_seconds` returns <0 when no useful
+// resume point exists (completed, near start, or near end).
+ARCA_API arca_status arca_progress_save(arca_db *db, const char *media_id,
+                                        double position_seconds,
+                                        double duration_seconds,
+                                        bool is_completed);
+ARCA_API double arca_progress_resume_seconds(arca_db *db, const char *media_id);
+// JSON: [{"media":{media object},"positionSeconds":12.3,
+//         "durationSeconds":123.0,"lastUpdatedUtc":123}]
+ARCA_API char *arca_progress_continue_watching_json(arca_db *db, int limit);
+
+// In-memory playback queue owned by the core. The shell may present it, but
+// order/current/shuffle logic stays behind this ABI.
+ARCA_API arca_queue *arca_queue_create(arca_db *db);
+ARCA_API void arca_queue_destroy(arca_queue *queue);
+ARCA_API arca_status arca_queue_set_from_media_ids_json(arca_queue *queue,
+                                                       const char *media_ids_json,
+                                                       const char *current_media_id);
+ARCA_API char *arca_queue_list_json(arca_queue *queue);
+ARCA_API char *arca_queue_current_json(arca_queue *queue);
+ARCA_API char *arca_queue_current_media_id(arca_queue *queue);
+ARCA_API arca_status arca_queue_set_current(arca_queue *queue, const char *media_id);
+ARCA_API arca_status arca_queue_next(arca_queue *queue);
+ARCA_API arca_status arca_queue_previous(arca_queue *queue);
+ARCA_API arca_status arca_queue_set_shuffle(arca_queue *queue, bool enabled);
+ARCA_API bool arca_queue_shuffle(arca_queue *queue);
 
 #ifdef __cplusplus
 }

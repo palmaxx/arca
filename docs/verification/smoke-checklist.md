@@ -39,3 +39,21 @@ by `hdr-verify`/`lib-verify`; this list is the interactive pass.
 - [ ] Rescan after deleting a file from disk: item disappears (`-1`).
 - [ ] Remove a library: items vanish; re-adding the same root works.
 - [ ] Restart the app: libraries persist, first library auto-selected.
+
+## Fluss-parity UI slice
+
+- [ ] Home shows continue-watching rows after playing at least one file long
+      enough to save progress.
+- [ ] Global search navigates to Search and returns matching media from the
+      core FTS index.
+- [ ] Queue page shows the currently selected queue and next/previous follow
+      the same order.
+- [ ] Window chrome matches the intended Fluss shape: custom title bar, menu,
+      left nav, and focused player view.
+
+## macOS scaffold
+
+- [ ] On a Mac, `cd shells/macos/ArcaMac && swift run` opens the stub SwiftUI
+      app.
+- [ ] Sidebar navigation, Library, Search, Player placeholder, Queue, and
+      Settings are all reachable.

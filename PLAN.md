@@ -10,6 +10,7 @@
 | **A — Discovery** | ✅ Approved (with direction: quality-first §3 criterion; hwdec deferral accepted contingent on DV/RPU verification) | 2026-06-11 |
 | **B — Plan & scaffold** | ✅ Approved (user set the Day-0 implementation goal) | 2026-06-12 |
 | **C — Day 0 build** | ✅ **All milestones done & gated** (M0, M1, M2a/M2b automated, M3, M4, M5). Two user-run checks remain in [docs/verification/day0.md](docs/verification/day0.md): DV profile-5 sample, on-display visual parity vs windowed mpv. | 2026-06-12 |
+| **D — Fluss parity slice** | ✅ Implementation slice done: library children/search/progress/queue moved into the C++ ABI; Windows shell reshaped toward Fluss; macOS SwiftUI scaffold added. User visual pass remains the acceptance check. | 2026-06-13 |
 
 ---
 
@@ -246,7 +247,7 @@ ARCA/
     tests/               # core unit tests (parser fixtures from streamxs)
   shells/
     windows/Arca/        # WinUI3 C# app (Fluss-derived shell) + Interop/ (P/Invoke)
-    macos/               # SwiftUI shell — later phase (MoltenVK / pl-vulkan)
+    macos/ArcaMac/       # SwiftPM SwiftUI shell scaffold (stub core first)
   third_party/mpv/       # vendored: include/, libmpv-2.dll, mpv.lib,
                          #   PROVENANCE.md, refresh.ps1   (ADR-002)
   tools/hdr-verify/      # standalone HDR smoke host (rapi_hdr_present port)
@@ -313,12 +314,33 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
    `core/src/media/`).
 4. Online metadata fetcher consuming the pending queue (TMDB/TVDB; port
    Fluss/streamxs provider behavior).
-5. Playback queue; media-detail page; FTS5 search; settings persistence.
-6. macOS shell: SwiftUI + `pl-vulkan`/MoltenVK session (core API is ready);
-   native Metal backend is Mac-resident work.
+5. Media-detail page; settings persistence; persistent queue/history polish.
+6. macOS shell: build SwiftUI scaffold on a Mac, then link the C ABI and start
+   `pl-vulkan`/MoltenVK session work. Native Metal backend is Mac-resident
+   work.
 
-Out of scope, seams only (brief §7): playback queue, online fetching,
-probing, media detail. macOS shell + pl-vulkan/MoltenVK session and the
-mpv-side render-API hwdec phase are the first post-Day-0 workstreams.
+Out of scope for the current prototype: online fetching, probing, media detail,
+Mac render backend validation, and the mpv-side render-API hwdec phase.
+
+## Phase D — Fluss parity slice
+
+**Goal:** make the next prototype complex enough to exercise the shared-core
+architecture: Home/Library/Search/Player/Queue/Settings in Windows, plus a
+parallel SwiftUI shell scaffold that consumes the same model boundary.
+
+**Done in this slice:**
+
+- Core ABI owns immediate library children, FTS5 search, progress/resume, and
+  an in-memory playback queue.
+- Windows `LibraryStore`/`PlaybackQueue` P/Invoke those APIs.
+- Windows shell adopts the Fluss-style title bar, navigation layout, home,
+  library explorer, search, queue, settings, and player overlay.
+- macOS `ArcaMac` SwiftPM package provides SwiftUI models/views and a
+  stub/native `ArcaCoreClient` split.
+- Docs added for ABI contract, Fluss parity mapping, macOS bring-up, and
+  manual smoke checks.
+
+**Validation:** native build, `lib-verify`, Windows shell build. Visual
+acceptance remains manual via `docs/verification/smoke-checklist.md`.
 
 # Phase C — Day 0 build (pending B approval)

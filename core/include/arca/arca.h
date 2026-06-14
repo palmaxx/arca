@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 #define ARCA_VERSION_MAJOR 0
-#define ARCA_VERSION_MINOR 1
+#define ARCA_VERSION_MINOR 2
 
 typedef enum arca_status {
     ARCA_OK              = 0,

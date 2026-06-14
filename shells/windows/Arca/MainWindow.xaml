@@ -1,16 +1,19 @@
 <Window
     x:Class="Arca.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Arca">
 
-    <Grid x:Name="Root" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Window.SystemBackdrop>
+        <MicaBackdrop />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="RootGrid" Background="{ThemeResource WindowBackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Keyboard map (Day 0): Space pause, arrows seek/volume, M mute, F11 fullscreen -->
         <Grid.KeyboardAccelerators>
             <KeyboardAccelerator Key="Space" Invoked="OnAccelTogglePause" />
             <KeyboardAccelerator Key="Left" Invoked="OnAccelSeekBack" />
@@ -20,136 +23,513 @@
             <KeyboardAccelerator Key="Up" Invoked="OnAccelVolumeUp" />
             <KeyboardAccelerator Key="Down" Invoked="OnAccelVolumeDown" />
             <KeyboardAccelerator Key="M" Invoked="OnAccelToggleMute" />
+            <KeyboardAccelerator Key="N" Invoked="OnAccelNext" />
+            <KeyboardAccelerator Key="P" Invoked="OnAccelPrevious" />
+            <KeyboardAccelerator Key="Q" Invoked="OnAccelQueue" />
+            <KeyboardAccelerator Key="S" Invoked="OnAccelShuffle" />
+            <KeyboardAccelerator Key="F" Invoked="OnAccelToggleFullscreen" />
             <KeyboardAccelerator Key="F11" Invoked="OnAccelToggleFullscreen" />
+            <KeyboardAccelerator Key="Escape" Invoked="OnAccelEscape" />
+            <KeyboardAccelerator Key="O" Modifiers="Control" Invoked="OnAccelOpenFile" />
         </Grid.KeyboardAccelerators>
 
-        <MenuBar Grid.Row="0" x:Name="AppMenuBar">
-            <MenuBarItem Title="File">
-                <MenuFlyoutItem Text="Open…" Click="OnOpenFile">
-                    <MenuFlyoutItem.KeyboardAccelerators>
-                        <KeyboardAccelerator Key="O" Modifiers="Control" />
-                    </MenuFlyoutItem.KeyboardAccelerators>
-                </MenuFlyoutItem>
-                <MenuFlyoutSeparator />
-                <MenuFlyoutItem Text="Exit" Click="OnExit" />
-            </MenuBarItem>
-            <MenuBarItem Title="Library">
-                <MenuFlyoutItem Text="Add library…" Click="OnAddLibrary" />
-                <MenuFlyoutItem Text="Rescan selected" Click="OnRescanLibrary" />
-                <MenuFlyoutItem Text="Remove selected" Click="OnRemoveLibrary" />
-                <MenuFlyoutSeparator />
-                <ToggleMenuFlyoutItem x:Name="SidebarToggle" Text="Show sidebar"
-                                      IsChecked="True" Click="OnToggleSidebar" />
-            </MenuBarItem>
-        </MenuBar>
+        <TitleBar
+            x:Name="ShellTitleBar"
+            Title="Arca"
+            IsBackButtonVisible="True"
+            BackRequested="OnTitleBarBackRequested">
+            <TitleBar.Content>
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <MenuBar Grid.Column="0" Margin="12,0,0,0" VerticalAlignment="Center">
+                        <MenuBarItem Title="File">
+                            <MenuFlyoutItem Text="Open file" Click="OnOpenFile" />
+                            <MenuFlyoutSeparator />
+                            <MenuFlyoutItem Text="Exit" Click="OnExit" />
+                        </MenuBarItem>
+                        <MenuBarItem Title="Library">
+                            <MenuFlyoutItem Text="Add library folder" Click="OnAddLibrary" />
+                            <MenuFlyoutItem Text="Refresh selected" Click="OnRescanLibrary" />
+                        </MenuBarItem>
+                        <MenuBarItem Title="View">
+                            <MenuFlyoutItem Text="Toggle fullscreen" Click="OnToggleFullscreenClicked" />
+                            <ToggleMenuFlyoutItem x:Name="ThemeLightMenuItem" Text="Light theme" Click="OnThemeMenuClicked" Tag="Light" />
+                            <ToggleMenuFlyoutItem x:Name="ThemeDarkMenuItem" Text="Dark theme" Click="OnThemeMenuClicked" Tag="Dark" />
+                        </MenuBarItem>
+                    </MenuBar>
+                    <AutoSuggestBox
+                        x:Name="GlobalSearchBox"
+                        Grid.Column="1"
+                        MinWidth="180"
+                        MaxWidth="640"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Center"
+                        PlaceholderText="Search library"
+                        QuerySubmitted="OnGlobalSearchSubmitted"
+                        TextChanged="OnGlobalSearchTextChanged" />
+                </Grid>
+            </TitleBar.Content>
+        </TitleBar>
 
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="300" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
+            <NavigationView
+                x:Name="ShellNavigationView"
+                AlwaysShowHeader="False"
+                Background="Transparent"
+                CompactPaneLength="48"
+                IsBackButtonVisible="Collapsed"
+                IsPaneOpen="True"
+                IsSettingsVisible="False"
+                OpenPaneLength="246"
+                PaneDisplayMode="Auto"
+                SelectionChanged="OnNavigationSelectionChanged">
 
-            <Grid x:Name="Sidebar" Grid.Column="0" Padding="8" RowSpacing="8"
-                  Background="{ThemeResource LayerFillColorDefaultBrush}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+                <NavigationView.MenuItems>
+                    <NavigationViewItem x:Name="HomeNavigationItem" Content="Home" Icon="Home" Tag="Home" />
+                    <NavigationViewItem x:Name="LibraryNavigationItem" Content="Video library" Icon="Video" Tag="Library" />
+                    <NavigationViewItem x:Name="SearchNavigationItem" Content="Search" Icon="Find" Tag="Search" />
+                    <NavigationViewItem x:Name="PlayerNavigationItem" Content="Now playing" Icon="Play" Tag="Player" />
+                    <NavigationViewItem x:Name="QueueNavigationItem" Content="Play queue" Icon="Bullets" Tag="Queue" />
+                </NavigationView.MenuItems>
+                <NavigationView.FooterMenuItems>
+                    <NavigationViewItem x:Name="SettingsNavigationItem" Content="Settings" Icon="Setting" Tag="Settings" />
+                </NavigationView.FooterMenuItems>
 
-                <Grid Grid.Row="0" ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Libraries" FontWeight="SemiBold"
-                               VerticalAlignment="Center" />
-                    <Button Grid.Column="1" Content="Add…" Click="OnAddLibrary" />
+                <Grid x:Name="ShellContentGrid" Padding="12">
+                    <Grid x:Name="HomeView">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Home" FontSize="28" FontWeight="SemiBold" />
+                                <TextBlock x:Name="HomeStatusTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Click="OnAddLibrary">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <SymbolIcon Symbol="Add" />
+                                    <TextBlock Text="Add library" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <Grid Grid.Row="1" Margin="0,12,0,0" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Continue watching" FontSize="18" FontWeight="SemiBold" />
+                                    <ListView
+                                        x:Name="ContinueWatchingListView"
+                                        Grid.Row="1"
+                                        Margin="0,8,0,0"
+                                        IsItemClickEnabled="True"
+                                        ItemClick="OnContinueWatchingItemClick"
+                                        SelectionMode="None">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Padding="0,6" ColumnSpacing="12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <StackPanel Spacing="2">
+                                                        <TextBlock Text="{Binding Media.DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Media.Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding ProgressLabel}" Style="{StaticResource MutedTextBlockStyle}" VerticalAlignment="Center" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </Grid>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource CardBorderStyle}" Padding="12">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="Libraries" FontSize="18" FontWeight="SemiBold" />
+                                    <ListView
+                                        x:Name="HomeLibrariesListView"
+                                        Grid.Row="1"
+                                        Margin="0,8,0,0"
+                                        IsItemClickEnabled="True"
+                                        ItemClick="OnHomeLibraryItemClick"
+                                        SelectionMode="None">
+                                        <ListView.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Padding="0,6" Spacing="2">
+                                                    <TextBlock Text="{Binding Display}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding RootPath}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListView.ItemTemplate>
+                                    </ListView>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+
+                    <Grid x:Name="LibraryView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid Grid.Row="0" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock x:Name="LibraryTitleTextBlock" Text="Video library" FontSize="28" FontWeight="SemiBold" />
+                                <TextBlock x:Name="LibraryPathTextBlock" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="LibraryStatusTextBlock" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <Button x:Name="BackToLibrariesButton" Grid.Column="1" Click="OnLibraryBackClicked">
+                                <SymbolIcon Symbol="Back" />
+                            </Button>
+                            <ComboBox x:Name="SortComboBox" Grid.Column="2" MinWidth="190" Header="Sort" SelectionChanged="OnSortChanged">
+                                <ComboBoxItem Content="Title A-Z" Tag="TitleAscending" />
+                                <ComboBoxItem Content="Title Z-A" Tag="TitleDescending" />
+                                <ComboBoxItem Content="Recently added" Tag="AddedDescending" />
+                                <ComboBoxItem Content="Recently modified" Tag="ModifiedDescending" />
+                                <ComboBoxItem Content="Largest first" Tag="SizeDescending" />
+                            </ComboBox>
+                            <Button x:Name="RescanLibraryButton" Grid.Column="3" Click="OnRescanLibrary">
+                                <SymbolIcon Symbol="Refresh" />
+                            </Button>
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="0,12,0,0">
+                            <Grid x:Name="LibraryRootsPanel">
+                                <GridView
+                                    x:Name="LibraryRootGridView"
+                                    IsItemClickEnabled="True"
+                                    ItemClick="OnLibraryRootItemClick"
+                                    SelectionMode="None">
+                                    <GridView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="280" Height="120" Padding="12" Style="{StaticResource CardBorderStyle}">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock Text="{Binding Display}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ModeLabel}" Style="{StaticResource MutedTextBlockStyle}" />
+                                                    <TextBlock Text="{Binding RootPath}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </GridView.ItemTemplate>
+                                </GridView>
+                            </Grid>
+
+                            <Grid x:Name="LibraryExplorerPanel" Visibility="Collapsed">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="LibraryBreadcrumbTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                                <ListView
+                                    x:Name="FoldersListView"
+                                    Grid.Row="1"
+                                    MaxHeight="170"
+                                    Margin="0,8,0,8"
+                                    IsItemClickEnabled="True"
+                                    ItemClick="OnFolderItemClick"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Padding="0,6" ColumnSpacing="10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <SymbolIcon Symbol="Folder" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Display}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <Grid Grid.Row="2">
+                                    <GridView
+                                        x:Name="OnlineGroupsGridView"
+                                        IsItemClickEnabled="True"
+                                        ItemClick="OnOnlineGroupItemClick"
+                                        SelectionMode="None">
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="260" Height="130" Padding="12" Style="{StaticResource CardBorderStyle}">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="{Binding Key}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding CountLabel}" Style="{StaticResource MutedTextBlockStyle}" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                    <GridView
+                                        x:Name="MediaGridView"
+                                        IsItemClickEnabled="True"
+                                        ItemClick="OnMediaItemClick"
+                                        SelectionMode="None">
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="300" Height="112" Padding="12" Style="{StaticResource CardBorderStyle}">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                </Grid>
+                                <TextBlock
+                                    x:Name="LibraryEmptyStateTextBlock"
+                                    Grid.Row="3"
+                                    Margin="0,8,0,0"
+                                    HorizontalAlignment="Center"
+                                    Style="{StaticResource MutedTextBlockStyle}" />
+                            </Grid>
+                        </Grid>
+                    </Grid>
+
+                    <Grid x:Name="SearchView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="SearchHeaderTextBlock" Text="Search" FontSize="28" FontWeight="SemiBold" />
+                            <TextBlock x:Name="SearchScopeTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                        </StackPanel>
+                        <ListView
+                            x:Name="SearchResultsListView"
+                            Grid.Row="1"
+                            Margin="0,12,0,0"
+                            IsItemClickEnabled="True"
+                            ItemClick="OnSearchResultItemClick"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="0,8" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Click="OnSearchResultPlayClicked" Tag="{Binding Id}">
+                                            <SymbolIcon Symbol="Play" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock x:Name="SearchEmptyStateTextBlock" Grid.Row="2" HorizontalAlignment="Center" Style="{StaticResource MutedTextBlockStyle}" />
+                    </Grid>
+
+                    <Grid x:Name="QueueView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Play queue" FontSize="28" FontWeight="SemiBold" />
+                            <TextBlock x:Name="QueueSummaryTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                        </StackPanel>
+                        <ListView
+                            x:Name="QueueItemsListView"
+                            Grid.Row="1"
+                            Margin="0,12,0,0"
+                            IsItemClickEnabled="True"
+                            ItemClick="OnQueueItemClick"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="0,8" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <SymbolIcon Symbol="Play" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock x:Name="QueueEmptyStateTextBlock" Grid.Row="2" HorizontalAlignment="Center" Style="{StaticResource MutedTextBlockStyle}" />
+                    </Grid>
+
+                    <Grid x:Name="SettingsView" Visibility="Collapsed">
+                        <StackPanel Spacing="18">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
+                                <TextBlock Text="Prototype preferences stored in the Windows shell." Style="{StaticResource MutedTextBlockStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="ThemeComboBox" Width="220" Header="App theme" SelectionChanged="OnThemeComboBoxChanged">
+                                <ComboBoxItem Content="Default" Tag="Default" />
+                                <ComboBoxItem Content="Light" Tag="Light" />
+                                <ComboBoxItem Content="Dark" Tag="Dark" />
+                            </ComboBox>
+                            <Button HorizontalAlignment="Left" Click="OnAddLibrary">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <SymbolIcon Symbol="Add" />
+                                    <TextBlock Text="Add library folder" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </NavigationView>
+
+            <Grid x:Name="PlayerView" Visibility="Collapsed" Background="Black">
+                <Grid
+                    x:Name="PlayerInteractionSurface"
+                    PointerMoved="OnPlayerPointerMoved"
+                    PointerPressed="OnPlayerPointerMoved">
+                    <SwapChainPanel
+                        x:Name="VideoPanel"
+                        SizeChanged="OnPanelSizeChanged"
+                        CompositionScaleChanged="OnPanelScaleChanged" />
+                    <TextBlock
+                        x:Name="PlayerIdleHint"
+                        Text="Choose a file or play from the library"
+                        Foreground="#888"
+                        FontSize="18"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        x:Name="PlaybackErrorTextBlock"
+                        Margin="20"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Foreground="Tomato"
+                        Visibility="Collapsed" />
                 </Grid>
 
-                <ListView Grid.Row="1" x:Name="LibraryList" MaxHeight="220"
-                          SelectionChanged="OnLibrarySelected">
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Grid ColumnSpacing="8">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="{Binding ModeGlyph}" FontSize="14"
-                                          VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="{Binding Display}"
-                                           TextTrimming="CharacterEllipsis" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
+                <Border
+                    x:Name="PlayerTitleOverlay"
+                    VerticalAlignment="Top"
+                    Background="{ThemeResource PlayerOverlayBackgroundBrush}"
+                    BorderBrush="{ThemeResource SurfaceBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Padding="12,8">
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Click="OnPlayerBackClicked">
+                            <SymbolIcon Symbol="Back" />
+                        </Button>
+                        <TextBlock
+                            x:Name="PlayerTitleTextBlock"
+                            Grid.Column="1"
+                            Text="No video loaded"
+                            Foreground="White"
+                            FontWeight="SemiBold"
+                            TextTrimming="CharacterEllipsis"
+                            VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="2" x:Name="LibraryStatus" Foreground="#888"
-                           TextWrapping="Wrap" />
-
-                <ListView Grid.Row="3" x:Name="MediaList"
-                          DoubleTapped="OnMediaDoubleTapped">
-                    <ListView.GroupStyle>
-                        <GroupStyle>
-                            <GroupStyle.HeaderTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Key}" FontWeight="SemiBold" />
-                                </DataTemplate>
-                            </GroupStyle.HeaderTemplate>
-                        </GroupStyle>
-                    </ListView.GroupStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <TextBlock Text="{Binding Display}"
-                                       TextTrimming="CharacterEllipsis" />
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
+                <Border
+                    x:Name="TransportOverlay"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Margin="0,0,0,28"
+                    Padding="16,8,16,12"
+                    Background="{ThemeResource PlayerOverlayBackgroundBrush}"
+                    BorderBrush="{ThemeResource SurfaceBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8">
+                    <Grid ColumnSpacing="18">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="220" />
+                        </Grid.ColumnDefinitions>
+                        <Slider
+                            x:Name="PositionSlider"
+                            Grid.Row="0"
+                            Grid.ColumnSpan="3"
+                            Maximum="100"
+                            StepFrequency="0.1"
+                            ValueChanged="OnSeekSliderChanged" />
+                        <TextBlock
+                            x:Name="TimeTextBlock"
+                            Grid.Row="1"
+                            Text="--:-- / --:--"
+                            Foreground="White"
+                            FontFamily="Consolas"
+                            VerticalAlignment="Center" />
+                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                            <Button x:Name="PreviousButton" Click="OnPreviousClicked">
+                                <SymbolIcon Symbol="Previous" />
+                            </Button>
+                            <Button Click="OnSeekBackClicked">
+                                <SymbolIcon Symbol="Back" />
+                            </Button>
+                            <Button x:Name="PlayPauseButton" Click="OnPlayPause" Width="50" Height="50">
+                                <SymbolIcon x:Name="PlayPauseIcon" Symbol="Play" />
+                            </Button>
+                            <Button Click="OnStopClicked">
+                                <SymbolIcon Symbol="Stop" />
+                            </Button>
+                            <Button Click="OnSeekForwardClicked">
+                                <SymbolIcon Symbol="Forward" />
+                            </Button>
+                            <Button x:Name="NextButton" Click="OnNextClicked">
+                                <SymbolIcon Symbol="Next" />
+                            </Button>
+                        </StackPanel>
+                        <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
+                            <Slider x:Name="VolumeSlider" Width="82" Minimum="0" Maximum="100" StepFrequency="5" ValueChanged="OnVolumeSliderChanged" />
+                            <Button x:Name="MuteButton" Click="OnToggleMute">
+                                <SymbolIcon x:Name="MuteIcon" Symbol="Volume" />
+                            </Button>
+                            <Button x:Name="ShuffleButton" Click="OnShuffleClicked">
+                                <SymbolIcon Symbol="Shuffle" />
+                            </Button>
+                            <Button x:Name="QueueButton" Click="OnQueueButtonClicked">
+                                <SymbolIcon Symbol="List" />
+                            </Button>
+                            <Button Click="OnToggleFullscreenClicked">
+                                <SymbolIcon Symbol="FullScreen" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </Grid>
-
-            <Grid Grid.Column="1" Background="Black">
-                <SwapChainPanel x:Name="VideoPanel"
-                                SizeChanged="OnPanelSizeChanged"
-                                CompositionScaleChanged="OnPanelScaleChanged" />
-                <TextBlock x:Name="IdleHint"
-                           Text="File → Open…  (Ctrl+O)   ·   Library → Add library…"
-                           Foreground="#666"
-                           FontSize="18"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center" />
-            </Grid>
-        </Grid>
-
-        <Grid Grid.Row="2" x:Name="TransportBar" Padding="12,8" ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-
-            <Button Grid.Column="0" x:Name="PlayPauseButton" Click="OnPlayPause"
-                    Width="44" IsEnabled="False">
-                <FontIcon x:Name="PlayPauseIcon" Glyph="&#xE768;" />
-            </Button>
-
-            <TextBlock Grid.Column="1" x:Name="PositionText" Text="--:--"
-                       VerticalAlignment="Center" FontFamily="Consolas" />
-
-            <Slider Grid.Column="2" x:Name="SeekSlider"
-                    Minimum="0" Maximum="100" StepFrequency="0.1"
-                    IsEnabled="False" VerticalAlignment="Center"
-                    ValueChanged="OnSeekSliderChanged" />
-
-            <TextBlock Grid.Column="3" x:Name="DurationText" Text="--:--"
-                       VerticalAlignment="Center" FontFamily="Consolas" />
-
-            <Button Grid.Column="4" x:Name="MuteButton" Click="OnToggleMute" Width="44">
-                <FontIcon x:Name="MuteIcon" Glyph="&#xE767;" />
-            </Button>
         </Grid>
     </Grid>
 </Window>

@@ -5,10 +5,11 @@ Guidance for Claude Code sessions in this repo.
 ## What this is
 
 Native 4K HDR/DV player: C++20 core (`arca_core.dll`, flat C ABI in
-`core/include/arca/`) + thin WinUI3 shell. Video path = vendored libmpv fork
-(gpu-next over the render API, `pl-d3d11`, `TARGET_COLORSPACE`). Read
-[PLAN.md](PLAN.md) for status, [DECISIONS.md](DECISIONS.md) for ADRs before
-changing architecture-level behavior.
+`core/include/arca/`) + thin native shells (WinUI3 now, SwiftUI scaffolded).
+Video path = vendored libmpv fork (gpu-next over the render API, `pl-d3d11`,
+`TARGET_COLORSPACE`). Read [PLAN.md](PLAN.md) for status,
+[DECISIONS.md](DECISIONS.md) for ADRs before changing architecture-level
+behavior.
 
 ## Build & verify
 
@@ -21,6 +22,8 @@ dotnet build shells\windows\Arca\Arca.csproj -p:Platform=x64   # shell
 ```
 
 Interactive pass: `docs/verification/smoke-checklist.md`.
+macOS scaffold pass on a Mac: `cd shells/macos/ArcaMac && swift run` (stub
+core unless `ARCA_NATIVE_CORE` is explicitly enabled and linked).
 Test content: `testdata/local/` (gitignored; DV8.1 synthetics — regenerate
 with dovi_tool + MSYS2 ffmpeg per `docs/verification/day0.md`).
 
@@ -41,13 +44,16 @@ with dovi_tool + MSYS2 ffmpeg per `docs/verification/day0.md`).
   yet; CPU decode is measured fine. Don't "fix" by enabling hwdec.
 - **Offline libraries must never gain network access**; online enrichment is
   a pending queue (`online_media_info`) — no fetcher exists yet by design.
-- Shells stay presentation-only; anything stateful belongs in the core.
+- Shells stay presentation-only; library child browsing, search, progress,
+  and queue behavior belong in the core ABI, not in WinUI/SwiftUI code.
 
 ## Conventions
 
 - Core: C++20, /W4, dependencies PRIVATE (nothing leaks through the ABI);
   list payloads cross the ABI as JSON; strings are UTF-8, caller-freed via
   `arca_string_free`.
+- Keep shell models shaped to the ABI JSON documented in
+  `docs/architecture/core-abi.md`.
 - Engine event callbacks fire on internal threads; shells marshal
   (`PlayerEngine` does this — keep that pattern).
 - Update PLAN.md status and append ADRs to DECISIONS.md as part of the

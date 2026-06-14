@@ -1,0 +1,4 @@
+module CArcaCore [system] {
+  header "include/CArcaCore.h"
+  export *
+}

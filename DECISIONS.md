@@ -184,3 +184,30 @@ caller-owned wraps released by end of render, incl. the error-clear gate)
 ARCA re-vendored at `dc7b021` and retired the indirection the same day.
 Note the `--border-background=none` + core-side clear remains — that is
 the separate libplacebo `blit_dst` limitation, unchanged by P5b.1.
+
+---
+
+## ADR-005 — Shell-facing library, search, progress, and queue logic lives in the C++ core
+
+**Date:** 2026-06-13 · **Status:** Accepted.
+
+**Context:** The Fluss WinUI3 player has useful C# logic for child browsing,
+FTS5 search, watch progress, and playback queues. ARCA needs equivalent
+behavior in both WinUI3 and SwiftUI without duplicating stateful logic in two
+native shells.
+
+**Decision:** Port the shell-facing read models and state transitions into the
+C++ core ABI:
+
+- `arca_library_children_json`
+- `arca_media_search_json`
+- `arca_progress_*`
+- `arca_queue_*`
+
+The shells receive denormalized JSON for presentation and invoke commands
+through the ABI. Windows wraps these calls in `LibraryStore`/`PlaybackQueue`;
+macOS uses the same model through `ArcaCoreClient`.
+
+**Consequences:** Shell UI code can be richer without becoming the source of
+truth. Future metadata, tags, persistent queue/history, and settings should
+extend this ABI rather than reintroducing platform-specific business logic.

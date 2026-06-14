@@ -26,6 +26,8 @@ public:
     void value(const std::string &s) { sep(); append_string(s.c_str()); }
     void value(const char *s) { sep(); append_string(s); }
     void value(int64_t v) { sep(); buf_ += std::to_string(v); }
+    void value(double v) { sep(); buf_ += std::to_string(v); }
+    void value(bool v) { sep(); buf_ += v ? "true" : "false"; }
     void value_null() { sep(); buf_ += "null"; }
 
     const std::string &str() const { return buf_; }

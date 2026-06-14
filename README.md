@@ -17,6 +17,7 @@ core/                C++20 core -> arca_core.dll (public ABI: core/include/arca)
   src/engine/        libmpv lifecycle + D3D11 HDR render sessions
   src/library/       SQLite library DB; offline/online hard seam
 shells/windows/Arca  WinUI3 shell (unpackaged, x64) — P/Invokes the C ABI
+shells/macos/ArcaMac SwiftUI shell scaffold — stub core by default
 tools/hdr-verify     playback/HDR/DV/seek verification host (CLI)
 tools/lib-verify     library ABI test gate
 tools/db-seed        scripted library imports
@@ -52,3 +53,15 @@ decode per ADR-003; RPU passthrough confirmed with real and synthesized
 content), library import/browse/delete with the offline/online separation,
 keyboard transport + scrubbing, fullscreen. See the verification record for
 measured numbers and the remaining user-run checks.
+
+## Current sprint state
+
+Post-Day-0 work is moving Fluss-style library/search/progress/queue behavior
+into the C++ core while reshaping the Windows shell around the Fluss layout.
+The macOS shell is scaffolded as a SwiftPM SwiftUI app; it runs against stub
+data until a Mac can build and link the native core.
+
+Reference docs:
+[docs/architecture/core-abi.md](docs/architecture/core-abi.md),
+[docs/reference/fluss-s1-map.md](docs/reference/fluss-s1-map.md),
+[docs/macos/bringup.md](docs/macos/bringup.md).

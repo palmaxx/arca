@@ -7,6 +7,34 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#1AFFFFFF" />
+                    <SolidColorBrush x:Key="SurfaceBorderBrush" Color="#22FFFFFF" />
+                    <SolidColorBrush x:Key="MutedForegroundBrush" Color="#99FFFFFF" />
+                    <SolidColorBrush x:Key="PlayerOverlayBackgroundBrush" Color="#D0181818" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="Transparent" />
+                    <SolidColorBrush x:Key="SurfaceBrush" Color="#0F000000" />
+                    <SolidColorBrush x:Key="SurfaceBorderBrush" Color="#1A000000" />
+                    <SolidColorBrush x:Key="MutedForegroundBrush" Color="#99000000" />
+                    <SolidColorBrush x:Key="PlayerOverlayBackgroundBrush" Color="#EAF7F7F7" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource SurfaceBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+
+            <Style x:Key="MutedTextBlockStyle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{ThemeResource MutedForegroundBrush}" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>
