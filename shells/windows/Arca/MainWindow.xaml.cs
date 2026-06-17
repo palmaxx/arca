@@ -14,7 +14,7 @@ public sealed partial class MainWindow : Window
     private static readonly string[] OpenExtensions =
         [".mkv", ".mp4", ".mov", ".m4v", ".webm", ".avi", ".ts", ".m2ts", ".hevc"];
 
-    private enum AppSection { Home, Library, Search, Player, Queue, Settings }
+    private enum AppSection { Home, Browse, Library, Search, Player, Queue, Settings }
 
     private sealed record OnlineGroup(string Key, IReadOnlyList<MediaInfo> Items)
     {
@@ -35,6 +35,8 @@ public sealed partial class MainWindow : Window
     private string _currentFolder = "";
     private OnlineGroup? _selectedOnlineGroup;
     private ArcaSortOrder _currentSort = ArcaSortOrder.TitleAscending;
+    private BrowseResult _currentBrowse = new();
+    private string _selectedBrowseFilter = "all";
     private IReadOnlyList<MediaInfo> _currentVisibleMedia = [];
     private IReadOnlyList<MediaInfo> _currentSearchResults = [];
     private string? _currentMediaId;
@@ -106,6 +108,7 @@ public sealed partial class MainWindow : Window
             _queue = _store.CreateQueue();
             RefreshLibraries();
             RefreshHome();
+            RefreshBrowse();
         }
         catch (Exception ex)
         {
@@ -148,6 +151,27 @@ public sealed partial class MainWindow : Window
         if (_store is null)
             return;
         ContinueWatchingListView.ItemsSource = _store.ContinueWatching(20);
+    }
+
+    private void RefreshBrowse(string? filter = null)
+    {
+        if (_store is null)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(filter))
+            _selectedBrowseFilter = filter;
+        _currentBrowse = _store.Browse(_selectedBrowseFilter, 8, 24);
+        _selectedBrowseFilter = _currentBrowse.SelectedFilter;
+        BrowseFiltersItemsControl.ItemsSource = _currentBrowse.Filters;
+        BrowseSectionsItemsControl.ItemsSource = _currentBrowse.Sections;
+
+        long total = _currentBrowse.Filters.FirstOrDefault(f => f.Key == "all")?.Count ?? 0;
+        BrowseStatusTextBlock.Text = total == 0
+            ? "Add a library to start browsing."
+            : $"{total} item{(total == 1 ? "" : "s")} indexed.";
+        BrowseEmptyStateTextBlock.Text = _currentBrowse.Sections.Count == 0
+            ? "Nothing to browse in this filter yet."
+            : "";
     }
 
     private void ShowLibraryRoots()
@@ -287,6 +311,7 @@ public sealed partial class MainWindow : Window
         LibraryStatusTextBlock.Text = $"Scan: +{added} -{removed}";
         RefreshLibraries(id);
         RefreshHome();
+        RefreshBrowse();
     }
 
     private async void OnRescanLibrary(object sender, RoutedEventArgs e)
@@ -299,6 +324,7 @@ public sealed partial class MainWindow : Window
         LibraryStatusTextBlock.Text = $"Scan: +{added} -{removed}";
         RefreshLibraries(id);
         RefreshHome();
+        RefreshBrowse();
     }
 
     private void RunSearch(string query)
@@ -315,6 +341,22 @@ public sealed partial class MainWindow : Window
             ? string.IsNullOrWhiteSpace(query) ? "Type in the title bar search box." : "No matches."
             : "";
         NavigateTo(AppSection.Search);
+    }
+
+    private MediaInfo? FindBrowseMedia(string id, out IReadOnlyList<MediaInfo> queueSource)
+    {
+        foreach (var row in _currentBrowse.Sections.SelectMany(section => section.Rows))
+        {
+            var media = row.Entries.FirstOrDefault(entry => entry.Id == id);
+            if (media is not null)
+            {
+                queueSource = row.Entries;
+                return media;
+            }
+        }
+
+        queueSource = [];
+        return null;
     }
 
     private void PlayMedia(MediaInfo media, IEnumerable<MediaInfo>? queueSource = null, bool tryResume = false)
@@ -387,6 +429,7 @@ public sealed partial class MainWindow : Window
 
         _currentSection = section;
         HomeView.Visibility = section == AppSection.Home ? Visibility.Visible : Visibility.Collapsed;
+        BrowseView.Visibility = section == AppSection.Browse ? Visibility.Visible : Visibility.Collapsed;
         LibraryView.Visibility = section == AppSection.Library ? Visibility.Visible : Visibility.Collapsed;
         SearchView.Visibility = section == AppSection.Search ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = section == AppSection.Queue ? Visibility.Visible : Visibility.Collapsed;
@@ -399,6 +442,7 @@ public sealed partial class MainWindow : Window
         ShellNavigationView.SelectedItem = section switch
         {
             AppSection.Home => HomeNavigationItem,
+            AppSection.Browse => BrowseNavigationItem,
             AppSection.Library => LibraryNavigationItem,
             AppSection.Search => SearchNavigationItem,
             AppSection.Player => PlayerNavigationItem,
@@ -410,8 +454,11 @@ public sealed partial class MainWindow : Window
 
         if (section == AppSection.Library && _selectedLibrary is null)
             ShowLibraryRoots();
+        if (section == AppSection.Browse)
+            RefreshBrowse();
         if (section == AppSection.Queue)
             RefreshQueueView();
+        SetPlayerOverlayVisible(section == AppSection.Player);
     }
 
     private void OnEngineState(ArcaPlayState state)
@@ -511,15 +558,28 @@ public sealed partial class MainWindow : Window
 
     private void SetPlayerOverlayVisible(bool visible)
     {
-        if (_currentSection != AppSection.Player)
-            return;
-        TransportOverlay.Opacity = visible ? 1 : 0;
-        PlayerTitleOverlay.Opacity = visible ? 1 : 0;
-        if (visible)
+        bool show = _currentSection == AppSection.Player && visible;
+        TransportBar.Opacity = show ? 1 : 0;
+        TransportBar.IsHitTestVisible = show;
+        PlayerTitleOverlay.Opacity = show ? 1 : 0;
+        PlayerTitleOverlay.IsHitTestVisible = show;
+        PlayerTitleTransform.Y = show ? 0 : -80;
+
+        if (show)
         {
             _overlayTimer.Stop();
             _overlayTimer.Start();
         }
+        else
+        {
+            _overlayTimer.Stop();
+        }
+    }
+
+    private void WakePlayerOverlay()
+    {
+        if (_currentSection == AppSection.Player)
+            SetPlayerOverlayVisible(true);
     }
 
     private void ToggleFullscreen()
@@ -551,12 +611,41 @@ public sealed partial class MainWindow : Window
     }
 
     private void OnExit(object sender, RoutedEventArgs e) => Close();
-    private void OnPlayPause(object sender, RoutedEventArgs e) => _engine?.TogglePause();
-    private void OnStopClicked(object sender, RoutedEventArgs e) => _engine?.Stop();
-    private void OnSeekBackClicked(object sender, RoutedEventArgs e) => _engine?.SeekRelative(-10);
-    private void OnSeekForwardClicked(object sender, RoutedEventArgs e) => _engine?.SeekRelative(10);
-    private void OnToggleMute(object sender, RoutedEventArgs e) => ToggleMute();
-    private void OnToggleFullscreenClicked(object sender, RoutedEventArgs e) => ToggleFullscreen();
+    private void OnPlayPause(object sender, RoutedEventArgs e)
+    {
+        _engine?.TogglePause();
+        WakePlayerOverlay();
+    }
+
+    private void OnStopClicked(object sender, RoutedEventArgs e)
+    {
+        _engine?.Stop();
+        WakePlayerOverlay();
+    }
+
+    private void OnSeekBackClicked(object sender, RoutedEventArgs e)
+    {
+        _engine?.SeekRelative(-10);
+        WakePlayerOverlay();
+    }
+
+    private void OnSeekForwardClicked(object sender, RoutedEventArgs e)
+    {
+        _engine?.SeekRelative(10);
+        WakePlayerOverlay();
+    }
+
+    private void OnToggleMute(object sender, RoutedEventArgs e)
+    {
+        ToggleMute();
+        WakePlayerOverlay();
+    }
+
+    private void OnToggleFullscreenClicked(object sender, RoutedEventArgs e)
+    {
+        ToggleFullscreen();
+        WakePlayerOverlay();
+    }
     private void OnQueueButtonClicked(object sender, RoutedEventArgs e) => NavigateTo(AppSection.Queue);
     private void OnPlayerBackClicked(object sender, RoutedEventArgs e) => NavigateTo(_lastNonPlayerSection);
     private void OnPlayerPointerMoved(object sender, PointerRoutedEventArgs e) => SetPlayerOverlayVisible(true);
@@ -565,12 +654,14 @@ public sealed partial class MainWindow : Window
     {
         if (_queue?.Previous() == true)
             LoadCurrentQueueItem(tryResume: false);
+        WakePlayerOverlay();
     }
 
     private void OnNextClicked(object sender, RoutedEventArgs e)
     {
         if (_queue?.Next() == true)
             LoadCurrentQueueItem(tryResume: false);
+        WakePlayerOverlay();
     }
 
     private void OnShuffleClicked(object sender, RoutedEventArgs e)
@@ -579,6 +670,7 @@ public sealed partial class MainWindow : Window
             return;
         _queue.Shuffle = !_queue.Shuffle;
         RefreshQueueView();
+        WakePlayerOverlay();
     }
 
     private void OnSeekSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -586,6 +678,7 @@ public sealed partial class MainWindow : Window
         if (_updatingSliderFromEngine || _engine is null)
             return;
         _engine.SeekAbsolute(e.NewValue);
+        WakePlayerOverlay();
     }
 
     private void OnVolumeSliderChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -593,6 +686,7 @@ public sealed partial class MainWindow : Window
         if (_updatingVolumeFromEngine || _engine is null)
             return;
         _engine.Volume = e.NewValue;
+        WakePlayerOverlay();
     }
 
     private void OnLibraryRootItemClick(object sender, ItemClickEventArgs e)
@@ -630,6 +724,30 @@ public sealed partial class MainWindow : Window
     {
         if (e.ClickedItem is MediaInfo media)
             PlayMedia(media, _currentVisibleMedia, tryResume: true);
+    }
+
+    private void OnBrowseFilterClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton { Tag: string filter })
+            RefreshBrowse(filter);
+    }
+
+    private void OnBrowseEntryItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is not MediaInfo media)
+            return;
+
+        IReadOnlyList<MediaInfo> queueSource = sender is GridView { ItemsSource: IEnumerable<MediaInfo> entries }
+            ? entries.ToList()
+            : [];
+        PlayMedia(media, queueSource.Count == 0 ? [media] : queueSource, tryResume: true);
+    }
+
+    private void OnBrowseEntryPlayClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string id } &&
+            FindBrowseMedia(id, out var queueSource) is { } media)
+            PlayMedia(media, queueSource, tryResume: true);
     }
 
     private void OnSearchResultItemClick(object sender, ItemClickEventArgs e)
@@ -711,6 +829,7 @@ public sealed partial class MainWindow : Window
             return;
         NavigateTo(tag switch
         {
+            "Browse" => AppSection.Browse,
             "Library" => AppSection.Library,
             "Search" => AppSection.Search,
             "Player" => AppSection.Player,
@@ -724,6 +843,8 @@ public sealed partial class MainWindow : Window
     {
         if (_currentSection == AppSection.Library)
             NavigateLibraryBack();
+        else if (_currentSection == AppSection.Browse)
+            NavigateTo(AppSection.Home);
         else if (_currentSection == AppSection.Search)
             NavigateTo(_selectedLibrary is null ? AppSection.Home : AppSection.Library);
         else if (_currentSection == AppSection.Queue || _currentSection == AppSection.Settings)
@@ -777,31 +898,31 @@ public sealed partial class MainWindow : Window
                              sender.CompositionScaleX, sender.CompositionScaleY);
 
     private void OnAccelTogglePause(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { _engine?.TogglePause(); a.Handled = true; }
+    { _engine?.TogglePause(); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelSeekBack(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { _engine?.SeekRelative(-5); a.Handled = true; }
+    { _engine?.SeekRelative(-5); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelSeekForward(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { _engine?.SeekRelative(5); a.Handled = true; }
+    { _engine?.SeekRelative(5); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelSeekBackLong(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { _engine?.SeekRelative(-60); a.Handled = true; }
+    { _engine?.SeekRelative(-60); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelSeekForwardLong(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { _engine?.SeekRelative(60); a.Handled = true; }
+    { _engine?.SeekRelative(60); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelVolumeUp(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { if (_engine is not null) _engine.Volume += 5; a.Handled = true; }
+    { if (_engine is not null) _engine.Volume += 5; WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelVolumeDown(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { if (_engine is not null) _engine.Volume -= 5; a.Handled = true; }
+    { if (_engine is not null) _engine.Volume -= 5; WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelToggleMute(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { ToggleMute(); a.Handled = true; }
+    { ToggleMute(); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelNext(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { if (_queue?.Next() == true) LoadCurrentQueueItem(false); a.Handled = true; }
+    { if (_queue?.Next() == true) LoadCurrentQueueItem(false); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelPrevious(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { if (_queue?.Previous() == true) LoadCurrentQueueItem(false); a.Handled = true; }
+    { if (_queue?.Previous() == true) LoadCurrentQueueItem(false); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelQueue(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
     { NavigateTo(AppSection.Queue); a.Handled = true; }
     private void OnAccelShuffle(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { if (_queue is not null) { _queue.Shuffle = !_queue.Shuffle; RefreshQueueView(); } a.Handled = true; }
+    { if (_queue is not null) { _queue.Shuffle = !_queue.Shuffle; RefreshQueueView(); } WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelToggleFullscreen(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
-    { ToggleFullscreen(); a.Handled = true; }
+    { ToggleFullscreen(); WakePlayerOverlay(); a.Handled = true; }
     private void OnAccelEscape(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)
     { if (AppWindow.Presenter.Kind == AppWindowPresenterKind.FullScreen) ToggleFullscreen(); else if (_currentSection == AppSection.Player) NavigateTo(_lastNonPlayerSection); a.Handled = true; }
     private void OnAccelOpenFile(KeyboardAccelerator s, KeyboardAcceleratorInvokedEventArgs a)

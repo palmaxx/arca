@@ -135,6 +135,26 @@ int main() {
           "fts search: finds online parsed title");
     arca_string_free(search);
 
+    char *browse = arca_media_browse_json(db, "", 8, 24);
+    CHECK(contains(browse, "\"filters\"") &&
+              contains(browse, "\"sections\"") &&
+              contains(browse, "The Departed") &&
+              contains(browse, "Show Name"),
+          "browse JSON: filters + mixed sections");
+    arca_string_free(browse);
+
+    char *browse_movies = arca_media_browse_json(db, "movies", 8, 24);
+    CHECK(contains(browse_movies, "The Departed") &&
+              !contains(browse_movies, "Show Name"),
+          "browse JSON: movies filter");
+    arca_string_free(browse_movies);
+
+    char *browse_series = arca_media_browse_json(db, "series", 8, 24);
+    CHECK(contains(browse_series, "Show Name") &&
+              !contains(browse_series, "The Departed"),
+          "browse JSON: series filter");
+    arca_string_free(browse_series);
+
     if (!on_ids.empty()) {
         CHECK(arca_progress_save(db, on_ids[0].c_str(), 42.0, 120.0, false) == ARCA_OK,
               "progress save");

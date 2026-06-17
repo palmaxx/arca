@@ -89,6 +89,7 @@
 
                 <NavigationView.MenuItems>
                     <NavigationViewItem x:Name="HomeNavigationItem" Content="Home" Icon="Home" Tag="Home" />
+                    <NavigationViewItem x:Name="BrowseNavigationItem" Content="Browse" Icon="Library" Tag="Browse" />
                     <NavigationViewItem x:Name="LibraryNavigationItem" Content="Video library" Icon="Video" Tag="Library" />
                     <NavigationViewItem x:Name="SearchNavigationItem" Content="Search" Icon="Find" Tag="Search" />
                     <NavigationViewItem x:Name="PlayerNavigationItem" Content="Now playing" Icon="Play" Tag="Player" />
@@ -183,6 +184,143 @@
                                 </Grid>
                             </Border>
                         </Grid>
+                    </Grid>
+
+                    <Grid x:Name="BrowseView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Browse" FontSize="28" FontWeight="SemiBold" />
+                                <TextBlock x:Name="BrowseStatusTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                            </StackPanel>
+                            <Button Grid.Column="1" Click="OnAddLibrary">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <SymbolIcon Symbol="Add" />
+                                    <TextBlock Text="Add library" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <ScrollViewer
+                            Grid.Row="1"
+                            Margin="0,14,0,6"
+                            HorizontalScrollBarVisibility="Auto"
+                            VerticalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="BrowseFiltersItemsControl">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <ToggleButton
+                                            MinWidth="96"
+                                            MaxWidth="160"
+                                            Margin="0,0,8,0"
+                                            Click="OnBrowseFilterClicked"
+                                            IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                            Tag="{Binding Key}">
+                                            <TextBlock Text="{Binding Display}" TextTrimming="CharacterEllipsis" />
+                                        </ToggleButton>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="BrowseSectionsItemsControl">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,16,0,6" Spacing="8">
+                                            <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="SemiBold" />
+                                            <ItemsControl ItemsSource="{Binding Rows}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Spacing="6">
+                                                            <TextBlock Text="{Binding Title}" Style="{StaticResource MutedTextBlockStyle}" />
+                                                            <GridView
+                                                                IsItemClickEnabled="True"
+                                                                ItemClick="OnBrowseEntryItemClick"
+                                                                ItemsSource="{Binding Entries}"
+                                                                SelectionMode="None">
+                                                                <GridView.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <ItemsStackPanel Orientation="Horizontal" />
+                                                                    </ItemsPanelTemplate>
+                                                                </GridView.ItemsPanel>
+                                                                <GridView.ItemContainerStyle>
+                                                                    <Style TargetType="GridViewItem">
+                                                                        <Setter Property="Margin" Value="0,0,12,0" />
+                                                                        <Setter Property="Padding" Value="0" />
+                                                                    </Style>
+                                                                </GridView.ItemContainerStyle>
+                                                                <GridView.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border Width="176" Height="258" Padding="8" Style="{StaticResource CardBorderStyle}">
+                                                                            <Grid RowSpacing="8">
+                                                                                <Grid.RowDefinitions>
+                                                                                    <RowDefinition Height="166" />
+                                                                                    <RowDefinition Height="Auto" />
+                                                                                    <RowDefinition Height="Auto" />
+                                                                                </Grid.RowDefinitions>
+                                                                                <Border Background="{ThemeResource SurfaceBrush}" CornerRadius="6">
+                                                                                    <Grid>
+                                                                                        <SymbolIcon
+                                                                                            Symbol="Video"
+                                                                                            Width="42"
+                                                                                            Height="42"
+                                                                                            HorizontalAlignment="Center"
+                                                                                            VerticalAlignment="Center"
+                                                                                            Opacity="0.7" />
+                                                                                        <Button
+                                                                                            HorizontalAlignment="Right"
+                                                                                            VerticalAlignment="Bottom"
+                                                                                            Margin="8"
+                                                                                            Click="OnBrowseEntryPlayClicked"
+                                                                                            Tag="{Binding Id}">
+                                                                                            <SymbolIcon Symbol="Play" />
+                                                                                        </Button>
+                                                                                    </Grid>
+                                                                                </Border>
+                                                                                <TextBlock
+                                                                                    Grid.Row="1"
+                                                                                    Text="{Binding DisplayTitle}"
+                                                                                    FontWeight="SemiBold"
+                                                                                    MaxLines="2"
+                                                                                    TextWrapping="WrapWholeWords"
+                                                                                    TextTrimming="CharacterEllipsis" />
+                                                                                <TextBlock
+                                                                                    Grid.Row="2"
+                                                                                    Text="{Binding LibraryName}"
+                                                                                    Style="{StaticResource MutedTextBlockStyle}"
+                                                                                    TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </GridView.ItemTemplate>
+                                                            </GridView>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock
+                            x:Name="BrowseEmptyStateTextBlock"
+                            Grid.Row="3"
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource MutedTextBlockStyle}" />
                     </Grid>
 
                     <Grid x:Name="LibraryView" Visibility="Collapsed">
@@ -438,7 +576,12 @@
                     Background="{ThemeResource PlayerOverlayBackgroundBrush}"
                     BorderBrush="{ThemeResource SurfaceBorderBrush}"
                     BorderThickness="0,0,0,1"
+                    IsHitTestVisible="False"
+                    Opacity="0"
                     Padding="12,8">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="PlayerTitleTransform" Y="-80" />
+                    </Border.RenderTransform>
                     <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -459,7 +602,7 @@
                 </Border>
 
                 <Border
-                    x:Name="TransportOverlay"
+                    x:Name="TransportBar"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Bottom"
                     Margin="0,0,0,28"
@@ -467,7 +610,9 @@
                     Background="{ThemeResource PlayerOverlayBackgroundBrush}"
                     BorderBrush="{ThemeResource SurfaceBorderBrush}"
                     BorderThickness="1"
-                    CornerRadius="8">
+                    CornerRadius="12"
+                    IsHitTestVisible="False"
+                    Opacity="0">
                     <Grid ColumnSpacing="18">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />

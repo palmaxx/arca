@@ -61,6 +61,16 @@ final class NativeArcaCoreClient: ArcaCoreClient {
         )
     }
 
+    func browse(filter: String?, rowLimit: Int32, itemLimit: Int32) async throws -> BrowseResult {
+        try decode(
+            BrowseResult.self,
+            from: takeString(
+                arca_media_browse_json(db, filter ?? "all", rowLimit, itemLimit),
+                "arca_media_browse_json"
+            )
+        )
+    }
+
     func continueWatching(limit: Int32) async throws -> [ProgressEntry] {
         try decode(
             [ProgressEntry].self,

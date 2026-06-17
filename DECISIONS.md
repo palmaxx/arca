@@ -18,8 +18,8 @@ reference repos outdated in ways that change the decision space.
    `C:\DEV\ai-dev\mpv-src`. Its D3D11 + Vulkan HDR render-API backends are
    **done and validated on real HDR hardware**, not in-progress. macOS is
    covered today via MoltenVK over the `pl-vulkan` backend; native Metal is
-   deferred (requires a Mac). Render-API hwdec is GL-only → the HDR paths
-   software-decode for now.
+   not the current path because libplacebo has no Metal `pl_gpu`. Render-API
+   hwdec is GL-only → the HDR paths software-decode for now.
 2. Fluss contains a substantial, portable .NET 8 core (library indexing,
    Local/Online separated metadata pipelines, TMDB/TVDB, probing, thumbnails,
    FTS5 search, queue, watch history) — directly relevant to §3 Option B.

@@ -24,6 +24,9 @@ The shell-facing library model is intentionally denormalized:
   panes. This keeps WinUI and SwiftUI from reimplementing path grouping.
 - `arca_media_search_json`: FTS5-backed media search. Empty queries return an
   empty list.
+- `arca_media_browse_json`: shell browse model with selected filter, filter
+  counts, sections, rows, and media entries. This keeps Fluss-style browsing
+  consistent between Windows and macOS.
 - Media objects include stable `id`, `fileName`, `relPath`, `folderRelPath`,
   size/timestamps, library identity, mode, and optional online parse fields.
 
@@ -44,7 +47,7 @@ This mirrors the useful Fluss behavior while avoiding a C#-only state model.
 Use simple checks:
 
 - `build.ps1` for the native core and tools.
-- `lib-verify.exe` for library/search/progress/queue ABI coverage.
+- `lib-verify.exe` for library/browse/search/progress/queue ABI coverage.
 - Windows shell `dotnet build` for P/Invoke and XAML compile coverage.
 - macOS scaffold: `swift run` on a Mac for the stub shell; enable the native
   client only after `arca_core` is built and linked for macOS.

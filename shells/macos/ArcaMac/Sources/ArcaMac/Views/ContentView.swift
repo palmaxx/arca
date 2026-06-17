@@ -11,6 +11,8 @@ struct ContentView: View {
                 switch model.selection {
                 case .home:
                     HomeView(model: model)
+                case .browse:
+                    BrowseView(model: model)
                 case .library:
                     LibraryView(model: model)
                 case .search:

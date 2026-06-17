@@ -15,7 +15,7 @@ struct PlayerPlaceholderView: View {
                     Text(model.selectedMedia?.displayTitle ?? "No media selected")
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(.white)
-                    Text("Metal video surface will replace this view.")
+                    Text("Vulkan over MoltenVK render surface will replace this view.")
                         .foregroundStyle(.white.opacity(0.7))
                 }
             }

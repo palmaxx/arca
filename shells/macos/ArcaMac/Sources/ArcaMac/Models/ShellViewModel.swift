@@ -7,6 +7,8 @@ final class ShellViewModel: ObservableObject {
     @Published var libraries: [LibraryInfo] = []
     @Published var selectedLibrary: LibraryInfo?
     @Published var children = LibraryChildren()
+    @Published var browse = BrowseResult()
+    @Published var selectedBrowseFilter = "all"
     @Published var continueWatching: [ProgressEntry] = []
     @Published var queue = QueueSnapshot()
     @Published var searchText = ""
@@ -24,6 +26,7 @@ final class ShellViewModel: ObservableObject {
     func load() async {
         do {
             libraries = try await core.loadLibraries()
+            await loadBrowse()
             continueWatching = try await core.continueWatching(limit: 12)
             queue = try await core.queueSnapshot()
             if selectedLibrary == nil, let first = libraries.first {
@@ -66,6 +69,22 @@ final class ShellViewModel: ObservableObject {
                 libraryId: selectedLibrary?.id,
                 limit: 80
             )
+        } catch {
+            statusText = error.localizedDescription
+        }
+    }
+
+    func loadBrowse(filter: String? = nil) async {
+        if let filter {
+            selectedBrowseFilter = filter
+        }
+        do {
+            browse = try await core.browse(
+                filter: selectedBrowseFilter,
+                rowLimit: 8,
+                itemLimit: 24
+            )
+            selectedBrowseFilter = browse.selectedFilter
         } catch {
             statusText = error.localizedDescription
         }

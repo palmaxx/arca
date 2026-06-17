@@ -131,6 +131,36 @@ public sealed record QueueSnapshot
     [JsonPropertyName("items")] public List<MediaInfo> Items { get; init; } = [];
 }
 
+public sealed record BrowseFilter
+{
+    [JsonPropertyName("key")] public string Key { get; init; } = "all";
+    [JsonPropertyName("name")] public string Name { get; init; } = "All";
+    [JsonPropertyName("count")] public long Count { get; init; }
+    [JsonPropertyName("selected")] public bool IsSelected { get; init; }
+
+    [JsonIgnore] public string Display => $"{Name} ({Count})";
+}
+
+public sealed record BrowseRow
+{
+    [JsonPropertyName("title")] public string Title { get; init; } = "";
+    [JsonPropertyName("entries")] public List<MediaInfo> Entries { get; init; } = [];
+}
+
+public sealed record BrowseSection
+{
+    [JsonPropertyName("kind")] public string Kind { get; init; } = "";
+    [JsonPropertyName("title")] public string Title { get; init; } = "";
+    [JsonPropertyName("rows")] public List<BrowseRow> Rows { get; init; } = [];
+}
+
+public sealed record BrowseResult
+{
+    [JsonPropertyName("selectedFilter")] public string SelectedFilter { get; init; } = "all";
+    [JsonPropertyName("filters")] public List<BrowseFilter> Filters { get; init; } = [];
+    [JsonPropertyName("sections")] public List<BrowseSection> Sections { get; init; } = [];
+}
+
 public sealed class LibraryStore : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -172,6 +202,9 @@ public sealed class LibraryStore : IDisposable
 
     public IReadOnlyList<MediaInfo> Search(string query, long libraryId = 0, int limit = 80) =>
         FromJsonArray<MediaInfo>(arca_media_search_json(_db, query, libraryId, limit));
+
+    public BrowseResult Browse(string filter = "all", int rowLimit = 8, int itemLimit = 24) =>
+        FromJsonObject<BrowseResult>(arca_media_browse_json(_db, filter, rowLimit, itemLimit)) ?? new();
 
     public bool SaveProgress(string mediaId, double positionSeconds, double durationSeconds, bool completed) =>
         arca_progress_save(_db, mediaId, positionSeconds, durationSeconds, completed) == ArcaStatus.Ok;
@@ -264,6 +297,10 @@ public sealed class LibraryStore : IDisposable
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr arca_media_search_json(
         IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string query, long libraryId, int limit);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr arca_media_browse_json(
+        IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string filter, int rowLimit, int itemLimit);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr arca_media_get_path(

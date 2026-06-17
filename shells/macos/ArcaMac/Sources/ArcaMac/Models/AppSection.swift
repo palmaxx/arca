@@ -2,6 +2,7 @@ import Foundation
 
 enum AppSection: String, CaseIterable, Identifiable, Hashable {
     case home
+    case browse
     case library
     case search
     case player
@@ -13,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     var title: String {
         switch self {
         case .home: "Home"
+        case .browse: "Browse"
         case .library: "Library"
         case .search: "Search"
         case .player: "Player"
@@ -24,6 +26,7 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable {
     var systemImage: String {
         switch self {
         case .home: "house"
+        case .browse: "square.grid.2x2"
         case .library: "rectangle.stack"
         case .search: "magnifyingglass"
         case .player: "play.rectangle"

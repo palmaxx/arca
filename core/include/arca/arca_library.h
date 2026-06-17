@@ -83,6 +83,13 @@ ARCA_API char *arca_library_children_json(arca_db *db, int64_t library_id,
 ARCA_API char *arca_media_search_json(arca_db *db, const char *query_utf8,
                                       int64_t library_id_or_zero, int limit);
 
+// JSON browse model for shell home/browse surfaces:
+// {"selectedFilter":"all","filters":[...],"sections":[...]}.
+// Filters are local-only read facets over indexed items (all/movies/series/
+// offline/online); no network enrichment is performed.
+ARCA_API char *arca_media_browse_json(arca_db *db, const char *filter_utf8,
+                                      int row_limit, int item_limit);
+
 // Absolute filesystem path for playback; NULL if unknown id.
 ARCA_API char *arca_media_get_path(arca_db *db, const char *media_id);
 

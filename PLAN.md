@@ -10,7 +10,7 @@
 | **A — Discovery** | ✅ Approved (with direction: quality-first §3 criterion; hwdec deferral accepted contingent on DV/RPU verification) | 2026-06-11 |
 | **B — Plan & scaffold** | ✅ Approved (user set the Day-0 implementation goal) | 2026-06-12 |
 | **C — Day 0 build** | ✅ **All milestones done & gated** (M0, M1, M2a/M2b automated, M3, M4, M5). Two user-run checks remain in [docs/verification/day0.md](docs/verification/day0.md): DV profile-5 sample, on-display visual parity vs windowed mpv. | 2026-06-12 |
-| **D — Fluss parity slice** | ✅ Implementation slice done: library children/search/progress/queue moved into the C++ ABI; Windows shell reshaped toward Fluss; macOS SwiftUI scaffold added. User visual pass remains the acceptance check. | 2026-06-13 |
+| **D — Fluss parity slice** | ✅ Implementation slice done: browse/library children/search/progress/queue moved into the C++ ABI; Windows shell reshaped toward Fluss with Browse and player overlays; macOS SwiftUI scaffold follows the same browse contract. User visual pass remains the acceptance check. | 2026-06-17 |
 
 ---
 
@@ -42,8 +42,9 @@ substantially DONE and hardware-validated** (state as of 2026-06-04):
   - `MPV_RENDER_PARAM_TARGET_COLORSPACE` public param wired (mpv-side enums,
     ABI-safe, API version 2.7).
   - **macOS strategy: MoltenVK via the existing `pl-vulkan` backend — no new
-    mpv code needed.** Native Metal is deferred (libplacebo's `metal.h` ships
-    only on macOS; must be authored on a Mac).
+    mpv code needed for rendering.** Native Metal is not the current path:
+    libplacebo has no Metal `pl_gpu`, so a true native Metal backend would be
+    upstream libplacebo work first.
 - **Build artifacts exist**: `mpv-wt-hdr\bld\libmpv-2.dll` + `mpv.exe`
   (built 2026-06-04, MSYS2 UCRT64: `ninja -C bld` with `MSYSTEM=UCRT64`).
 - **Reference host for our player** (= mpv Plan 2 "Phase 5b production shell"):
@@ -180,8 +181,8 @@ Rust NAPI addon for mpv/WASAPI/window chrome).
 | Brief assumption | Verdict |
 |---|---|
 | mpv work lives at `C:\DEV\ai-dev\mpv-src` | ❌ Stale path — see §1 |
-| Render API is in-progress, "debug while building the player" | ❌ (Good news) Core is done + HW-validated; remaining mpv-side items are render-API hwdec (D3D11/Vulkan), native Metal (Mac-only), upstream merge hygiene |
-| d3d11/vulkan/metal backends | ⚠️ d3d11 + vulkan done; **metal deferred — macOS = MoltenVK over pl-vulkan** (works today, no new code) |
+| Render API is in-progress, "debug while building the player" | ❌ (Good news) Core is done + HW-validated; remaining mpv-side items are render-API hwdec (D3D11/Vulkan/VideoToolbox), MoltenVK host integration, upstream merge hygiene |
+| d3d11/vulkan/metal backends | ⚠️ d3d11 + vulkan done; **macOS = MoltenVK over pl-vulkan** for rendering (native Metal would require a libplacebo Metal backend first) |
 | Fluss "less mature logic" | ❌ Substantial portable C# core incl. the exact Local/Online separation §7 requires, TMDB/TVDB, probing, thumbnails, FTS5, queue, history |
 | Fluss Windows shell "basically ready" | ✅ Functional, but monolithic (~2400-line MainWindow, no DI) — needs rewiring onto a shared core either way |
 | Fluss depends on MS Store codecs | ✅ For its current MediaFoundation engine; mpv engine scaffolded, never implemented |
@@ -291,7 +292,7 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
   compiled in; schema v1 (libraries, content-derived media IDs,
   `online_media_info` queue). Import/browse/rescan/remove in the shell
   sidebar + `db-seed` CLI; double-click plays from the folder view.
-  *Gate:* `lib-verify` 13/13 PASS.
+  *Gate:* `lib-verify` PASS.
 - **M4 — Offline/Online hard seam (scaffold). ✅ DONE 2026-06-12.**
   Offline = explorer-flat view, scan is pure filesystem enumeration; the
   core links no networking facility at all. Online = local filename
@@ -316,8 +317,8 @@ Boundary rule (from players' `REPO_LAYOUT.md`, kept): shells may include only
    Fluss/streamxs provider behavior).
 5. Media-detail page; settings persistence; persistent queue/history polish.
 6. macOS shell: build SwiftUI scaffold on a Mac, then link the C ABI and start
-   `pl-vulkan`/MoltenVK session work. Native Metal backend is Mac-resident
-   work.
+   `pl-vulkan`/MoltenVK session work. VideoToolbox render-API hwdec remains a
+   later mpv-fork gate and needs Mac functional validation.
 
 Out of scope for the current prototype: online fetching, probing, media detail,
 Mac render backend validation, and the mpv-side render-API hwdec phase.
@@ -325,20 +326,20 @@ Mac render backend validation, and the mpv-side render-API hwdec phase.
 ## Phase D — Fluss parity slice
 
 **Goal:** make the next prototype complex enough to exercise the shared-core
-architecture: Home/Library/Search/Player/Queue/Settings in Windows, plus a
-parallel SwiftUI shell scaffold that consumes the same model boundary.
+architecture: Home/Browse/Library/Search/Player/Queue/Settings in Windows,
+plus a parallel SwiftUI shell scaffold that consumes the same model boundary.
 
 **Done in this slice:**
 
-- Core ABI owns immediate library children, FTS5 search, progress/resume, and
-  an in-memory playback queue.
+- Core ABI owns Browse, immediate library children, FTS5 search,
+  progress/resume, and an in-memory playback queue.
 - Windows `LibraryStore`/`PlaybackQueue` P/Invoke those APIs.
 - Windows shell adopts the Fluss-style title bar, navigation layout, home,
-  library explorer, search, queue, settings, and player overlay.
+  browse, library explorer, search, queue, settings, and player overlays.
 - macOS `ArcaMac` SwiftPM package provides SwiftUI models/views and a
   stub/native `ArcaCoreClient` split.
-- Docs added for ABI contract, Fluss parity mapping, macOS bring-up, and
-  manual smoke checks.
+- Docs added for ABI contract, Fluss parity mapping, macOS bring-up,
+  macOS day-0-equivalent scope, and manual smoke checks.
 
 **Validation:** native build, `lib-verify`, Windows shell build. Visual
 acceptance remains manual via `docs/verification/smoke-checklist.md`.

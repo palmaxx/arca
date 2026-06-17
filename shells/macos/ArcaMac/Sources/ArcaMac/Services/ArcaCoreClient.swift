@@ -6,6 +6,7 @@ protocol ArcaCoreClient: AnyObject {
     func loadLibraries() async throws -> [LibraryInfo]
     func loadChildren(libraryId: Int64, folder: String, sort: MediaSortOrder) async throws -> LibraryChildren
     func search(_ query: String, libraryId: Int64?, limit: Int32) async throws -> [MediaInfo]
+    func browse(filter: String?, rowLimit: Int32, itemLimit: Int32) async throws -> BrowseResult
     func continueWatching(limit: Int32) async throws -> [ProgressEntry]
     func queueSnapshot() async throws -> QueueSnapshot
 }

@@ -51,6 +51,72 @@ final class StubArcaCoreClient: ArcaCoreClient {
             .map { $0 }
     }
 
+    func browse(filter: String?, rowLimit: Int32, itemLimit: Int32) async throws -> BrowseResult {
+        let selected = ["movies", "series", "offline", "online"].contains(filter ?? "") ? filter! : "all"
+        let scoped = media.filter { item in
+            switch selected {
+            case "movies":
+                item.season == nil && item.title != nil
+            case "series":
+                item.season != nil
+            case "offline":
+                item.mode == "offline"
+            case "online":
+                item.mode == "online"
+            default:
+                true
+            }
+        }
+        let movies = media.filter { $0.season == nil && $0.title != nil }
+        let series = media.filter { $0.season != nil }
+        let offline = media.filter { $0.mode == "offline" }
+        let online = media.filter { $0.mode == "online" }
+        let filters = [
+            BrowseFilter(key: "all", name: "All", count: Int64(media.count), selected: selected == "all"),
+            BrowseFilter(key: "movies", name: "Movies", count: Int64(movies.count), selected: selected == "movies"),
+            BrowseFilter(key: "series", name: "Series", count: Int64(series.count), selected: selected == "series"),
+            BrowseFilter(key: "offline", name: "Local", count: Int64(offline.count), selected: selected == "offline"),
+            BrowseFilter(key: "online", name: "Online", count: Int64(online.count), selected: selected == "online")
+        ]
+
+        let cap = max(1, Int(itemLimit))
+        func row(_ title: String, _ entries: [MediaInfo]) -> BrowseRow {
+            BrowseRow(title: title, entries: Array(entries.prefix(cap)))
+        }
+        func sorted(_ items: [MediaInfo]) -> [MediaInfo] {
+            items.sorted { $0.displayTitle.localizedStandardCompare($1.displayTitle) == .orderedAscending }
+        }
+
+        var sections: [BrowseSection] = []
+        if selected == "all" || selected == "online" {
+            sections.append(BrowseSection(kind: "recent", title: "Recently added", rows: [row("Latest", scoped)]))
+        }
+        if selected == "all" || selected == "movies" || selected == "online" {
+            let entries = sorted(scoped.filter { $0.season == nil && $0.title != nil })
+            if !entries.isEmpty {
+                sections.append(BrowseSection(kind: "movies", title: "Movies", rows: [row("Movies", entries)]))
+            }
+        }
+        if selected == "all" || selected == "series" || selected == "online" {
+            let entries = sorted(scoped.filter { $0.season != nil })
+            if !entries.isEmpty {
+                sections.append(BrowseSection(kind: "series", title: "Series", rows: [row("Shows", entries)]))
+            }
+        }
+        if selected == "all" || selected == "offline" {
+            let entries = sorted(scoped.filter { $0.mode == "offline" })
+            if !entries.isEmpty {
+                sections.append(BrowseSection(kind: "library", title: "Local files", rows: [row("Files", entries)]))
+            }
+        }
+
+        return BrowseResult(
+            selectedFilter: selected,
+            filters: filters,
+            sections: Array(sections.prefix(max(1, Int(rowLimit))))
+        )
+    }
+
     func continueWatching(limit: Int32) async throws -> [ProgressEntry] {
         media.prefix(Int(limit)).enumerated().map { index, item in
             ProgressEntry(

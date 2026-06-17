@@ -87,3 +87,34 @@ struct QueueSnapshot: Codable, Hashable {
         return items[currentIndex]
     }
 }
+
+struct BrowseFilter: Identifiable, Codable, Hashable {
+    let key: String
+    let name: String
+    let count: Int64
+    let selected: Bool
+
+    var id: String { key }
+    var display: String { "\(name) (\(count))" }
+}
+
+struct BrowseRow: Identifiable, Codable, Hashable {
+    let title: String
+    let entries: [MediaInfo]
+
+    var id: String { title }
+}
+
+struct BrowseSection: Identifiable, Codable, Hashable {
+    let kind: String
+    let title: String
+    let rows: [BrowseRow]
+
+    var id: String { "\(kind)-\(title)" }
+}
+
+struct BrowseResult: Codable, Hashable {
+    var selectedFilter: String = "all"
+    var filters: [BrowseFilter] = []
+    var sections: [BrowseSection] = []
+}

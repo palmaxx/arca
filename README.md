@@ -56,12 +56,14 @@ measured numbers and the remaining user-run checks.
 
 ## Current sprint state
 
-Post-Day-0 work is moving Fluss-style library/search/progress/queue behavior
-into the C++ core while reshaping the Windows shell around the Fluss layout.
-The macOS shell is scaffolded as a SwiftPM SwiftUI app; it runs against stub
-data until a Mac can build and link the native core.
+Post-Day-0 work is moving Fluss-style browse/library/search/progress/queue
+behavior into the C++ core while reshaping the Windows shell around the Fluss
+layout. The macOS shell is scaffolded as a SwiftPM SwiftUI app; it runs against
+stub data until a Mac can build and link the native core. The macOS render path
+is Vulkan over MoltenVK, not native Metal.
 
 Reference docs:
 [docs/architecture/core-abi.md](docs/architecture/core-abi.md),
 [docs/reference/fluss-s1-map.md](docs/reference/fluss-s1-map.md),
-[docs/macos/bringup.md](docs/macos/bringup.md).
+[docs/macos/bringup.md](docs/macos/bringup.md),
+[docs/macos/day0-equivalent.md](docs/macos/day0-equivalent.md).

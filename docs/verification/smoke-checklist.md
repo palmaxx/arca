@@ -2,7 +2,9 @@
 
 Run before declaring a playback/windowing change stable (ported from the
 streamxs manual checklist, adapted to ARCA). Automatable items are covered
-by `hdr-verify`/`lib-verify`; this list is the interactive pass.
+by `hdr-verify`/`lib-verify`; this list is the interactive pass. The mpv fork
+verification scripts golden-gate render context behavior only. They are not a
+substitute for these shell/UI checks.
 
 ## Engine / render (hdr-verify or shell)
 
@@ -44,16 +46,24 @@ by `hdr-verify`/`lib-verify`; this list is the interactive pass.
 
 - [ ] Home shows continue-watching rows after playing at least one file long
       enough to save progress.
+- [ ] Browse opens from the left nav, filter chips update rows, and clicking a
+      media card starts playback.
 - [ ] Global search navigates to Search and returns matching media from the
       core FTS index.
 - [ ] Queue page shows the currently selected queue and next/previous follow
       the same order.
 - [ ] Window chrome matches the intended Fluss shape: custom title bar, menu,
       left nav, and focused player view.
+- [ ] In Player, title and transport controls appear as overlays over the video
+      surface, wake on pointer/keyboard/control use, and stop taking clicks
+      after hiding.
 
 ## macOS scaffold
 
 - [ ] On a Mac, `cd shells/macos/ArcaMac && swift run` opens the stub SwiftUI
       app.
-- [ ] Sidebar navigation, Library, Search, Player placeholder, Queue, and
-      Settings are all reachable.
+- [ ] Sidebar navigation, Browse, Library, Search, Player placeholder, Queue,
+      and Settings are all reachable.
+- [ ] Browse filter chips switch rows and selecting a card opens Player.
+- [ ] Player placeholder describes the Vulkan over MoltenVK path, not native
+      Metal.

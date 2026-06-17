@@ -266,6 +266,14 @@ std::vector<MediaRow> media_for_library(sqlite3 *db, int64_t library_id) {
     return rows;
 }
 
+std::vector<MediaRow> media_all(sqlite3 *db) {
+    std::vector<MediaRow> rows;
+    Stmt st(db, kMediaSelect);
+    while (st.step_row())
+        rows.push_back(read_media_row(st));
+    return rows;
+}
+
 std::optional<MediaRow> media_by_id(sqlite3 *db, const std::string &id) {
     std::string sql = std::string(kMediaSelect) + " WHERE m.id=?";
     Stmt st(db, sql.c_str());
@@ -310,6 +318,85 @@ void sort_media(std::vector<MediaRow> &rows, arca_sort_order sort) {
     }
 }
 
+bool browse_is_series(const MediaRow &row) {
+    return row.season.has_value();
+}
+
+bool browse_is_movie(const MediaRow &row) {
+    return row.library_mode == ARCA_LIB_ONLINE && row.title.has_value() &&
+           !row.season.has_value();
+}
+
+std::string normalize_browse_filter(const char *filter_utf8) {
+    std::string filter = lower_ascii(filter_utf8 ? filter_utf8 : "");
+    if (filter == "movies" || filter == "series" || filter == "offline" ||
+        filter == "online")
+        return filter;
+    return "all";
+}
+
+bool browse_matches_filter(const MediaRow &row, const std::string &filter) {
+    if (filter == "movies")
+        return browse_is_movie(row);
+    if (filter == "series")
+        return browse_is_series(row);
+    if (filter == "offline")
+        return row.library_mode == ARCA_LIB_OFFLINE;
+    if (filter == "online")
+        return row.library_mode == ARCA_LIB_ONLINE;
+    return true;
+}
+
+std::vector<MediaRow> browse_filtered(const std::vector<MediaRow> &rows,
+                                      const std::string &filter) {
+    std::vector<MediaRow> out;
+    for (const auto &row : rows) {
+        if (browse_matches_filter(row, filter))
+            out.push_back(row);
+    }
+    return out;
+}
+
+std::vector<MediaRow> browse_recent(std::vector<MediaRow> rows) {
+    std::sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) {
+        if (a.added_utc == b.added_utc)
+            return lower_ascii(display_title(a)) < lower_ascii(display_title(b));
+        return a.added_utc > b.added_utc;
+    });
+    return rows;
+}
+
+std::vector<MediaRow> browse_movies(std::vector<MediaRow> rows) {
+    rows.erase(std::remove_if(rows.begin(), rows.end(),
+                              [](const auto &row) { return !browse_is_movie(row); }),
+               rows.end());
+    sort_media(rows, ARCA_SORT_TITLE_ASC);
+    return rows;
+}
+
+std::vector<MediaRow> browse_series_groups(std::vector<MediaRow> rows) {
+    rows.erase(std::remove_if(rows.begin(), rows.end(),
+                              [](const auto &row) { return !browse_is_series(row); }),
+               rows.end());
+    sort_media(rows, ARCA_SORT_TITLE_ASC);
+    std::vector<MediaRow> out;
+    std::unordered_set<std::string> seen;
+    for (const auto &row : rows) {
+        std::string key = row.group_key ? *row.group_key : lower_ascii(display_title(row));
+        if (seen.insert(key).second)
+            out.push_back(row);
+    }
+    return out;
+}
+
+std::vector<MediaRow> browse_offline(std::vector<MediaRow> rows) {
+    rows.erase(std::remove_if(rows.begin(), rows.end(),
+                              [](const auto &row) { return row.library_mode != ARCA_LIB_OFFLINE; }),
+               rows.end());
+    sort_media(rows, ARCA_SORT_TITLE_ASC);
+    return rows;
+}
+
 void write_media_object(arca::JsonWriter &w, const MediaRow &row,
                         bool include_library, std::optional<bool> is_current = std::nullopt) {
     w.begin_object();
@@ -334,6 +421,44 @@ void write_media_object(arca::JsonWriter &w, const MediaRow &row,
         w.key("isCurrent"); w.value(*is_current);
     }
     w.end_object();
+}
+
+void write_browse_filter(arca::JsonWriter &w, const char *key, const char *name,
+                         int64_t count, const std::string &selected) {
+    w.begin_object();
+    w.key("key"); w.value(key);
+    w.key("name"); w.value(name);
+    w.key("count"); w.value(count);
+    w.key("selected"); w.value(selected == key);
+    w.end_object();
+}
+
+bool write_browse_section(arca::JsonWriter &w, const char *kind, const char *title,
+                          const char *row_title, const std::vector<MediaRow> &entries,
+                          int item_limit) {
+    if (entries.empty())
+        return false;
+    int capped = std::clamp(item_limit <= 0 ? 24 : item_limit, 1, 100);
+    w.begin_object();
+    w.key("kind"); w.value(kind);
+    w.key("title"); w.value(title);
+    w.key("rows");
+    w.begin_array();
+    w.begin_object();
+    w.key("title"); w.value(row_title);
+    w.key("entries");
+    w.begin_array();
+    int written = 0;
+    for (const auto &row : entries) {
+        if (written++ >= capped)
+            break;
+        write_media_object(w, row, true);
+    }
+    w.end_array();
+    w.end_object();
+    w.end_array();
+    w.end_object();
+    return true;
 }
 
 void rebuild_search_for_library(sqlite3 *db, int64_t library_id) {
@@ -747,6 +872,68 @@ char *arca_media_search_json(arca_db *db, const char *query_utf8,
             write_media_object(w, read_media_row(st), true);
     }
     w.end_array();
+    return dup_out(w.str());
+}
+
+char *arca_media_browse_json(arca_db *db, const char *filter_utf8,
+                             int row_limit, int item_limit) {
+    if (!db)
+        return nullptr;
+    std::string selected = normalize_browse_filter(filter_utf8);
+    int max_sections = std::clamp(row_limit <= 0 ? 8 : row_limit, 1, 24);
+
+    auto all_rows = media_all(db->db);
+    auto filtered_rows = browse_filtered(all_rows, selected);
+    auto all_movies = browse_movies(all_rows);
+    auto all_series = browse_series_groups(all_rows);
+    auto all_offline = browse_offline(all_rows);
+    int64_t online_count = 0;
+    for (const auto &row : all_rows) {
+        if (row.library_mode == ARCA_LIB_ONLINE)
+            online_count++;
+    }
+
+    arca::JsonWriter w;
+    w.begin_object();
+    w.key("selectedFilter"); w.value(selected);
+    w.key("filters");
+    w.begin_array();
+    write_browse_filter(w, "all", "All", (int64_t)all_rows.size(), selected);
+    write_browse_filter(w, "movies", "Movies", (int64_t)all_movies.size(), selected);
+    write_browse_filter(w, "series", "Series", (int64_t)all_series.size(), selected);
+    write_browse_filter(w, "offline", "Local", (int64_t)all_offline.size(), selected);
+    write_browse_filter(w, "online", "Online", online_count, selected);
+    w.end_array();
+
+    int sections = 0;
+    auto emit = [&](const char *kind, const char *title, const char *row_title,
+                    const std::vector<MediaRow> &rows) {
+        if (sections >= max_sections)
+            return;
+        if (write_browse_section(w, kind, title, row_title, rows, item_limit))
+            sections++;
+    };
+
+    w.key("sections");
+    w.begin_array();
+    if (selected == "all") {
+        emit("recent", "Recently added", "Latest", browse_recent(filtered_rows));
+        emit("movies", "Movies", "Movies", browse_movies(filtered_rows));
+        emit("series", "Series", "Shows", browse_series_groups(filtered_rows));
+        emit("library", "Local files", "Files", browse_offline(filtered_rows));
+    } else if (selected == "movies") {
+        emit("movies", "Movies", "Movies", browse_movies(filtered_rows));
+    } else if (selected == "series") {
+        emit("series", "Series", "Shows", browse_series_groups(filtered_rows));
+    } else if (selected == "offline") {
+        emit("library", "Local files", "Files", browse_offline(filtered_rows));
+    } else if (selected == "online") {
+        emit("recent", "Recently added", "Latest online", browse_recent(filtered_rows));
+        emit("movies", "Movies", "Movies", browse_movies(filtered_rows));
+        emit("series", "Series", "Shows", browse_series_groups(filtered_rows));
+    }
+    w.end_array();
+    w.end_object();
     return dup_out(w.str());
 }
 
