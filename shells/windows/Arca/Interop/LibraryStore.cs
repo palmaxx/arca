@@ -59,6 +59,11 @@ public sealed record MediaInfo
     [JsonPropertyName("libraryName")] public string? LibraryName { get; init; }
     [JsonPropertyName("mode")] public string? Mode { get; init; }
     [JsonPropertyName("isCurrent")] public bool IsCurrent { get; init; }
+    [JsonPropertyName("thumbnailPath")] public string? ThumbnailPath { get; init; }
+    [JsonPropertyName("durationSeconds")] public double? DurationSeconds { get; init; }
+    [JsonPropertyName("resolution")] public string? Resolution { get; init; }
+    [JsonPropertyName("dynamicRange")] public string? DynamicRange { get; init; }
+    [JsonPropertyName("probeStatus")] public string? ProbeStatus { get; init; }
 
     [JsonIgnore]
     public string DisplayTitle
@@ -79,9 +84,18 @@ public sealed record MediaInfo
         get
         {
             string scope = string.IsNullOrWhiteSpace(LibraryName) ? RelPath : $"{LibraryName} - {RelPath}";
-            return $"{scope} - {FormatFileSize(Size)}";
+            string technical = !string.IsNullOrWhiteSpace(Resolution)
+                ? $" - {Resolution}{(!string.IsNullOrWhiteSpace(DynamicRange) ? $" {DynamicRange}" : "")}"
+                : "";
+            return $"{scope} - {FormatFileSize(Size)}{technical}";
         }
     }
+
+    [JsonIgnore]
+    public Uri? ThumbnailUri =>
+        !string.IsNullOrWhiteSpace(ThumbnailPath) && File.Exists(ThumbnailPath)
+            ? new Uri(ThumbnailPath)
+            : null;
 
     [JsonIgnore]
     public string GroupDisplay =>
@@ -101,6 +115,92 @@ public sealed record MediaInfo
         }
         return unit == 0 ? $"{value:0} {units[unit]}" : $"{value:0.0} {units[unit]}";
     }
+}
+
+public sealed record MediaProbeInfo
+{
+    [JsonPropertyName("status")] public string Status { get; init; } = "missing";
+    [JsonPropertyName("error")] public string? Error { get; init; }
+    [JsonPropertyName("durationSeconds")] public double? DurationSeconds { get; init; }
+    [JsonPropertyName("width")] public int? Width { get; init; }
+    [JsonPropertyName("height")] public int? Height { get; init; }
+    [JsonPropertyName("frameRate")] public string? FrameRate { get; init; }
+    [JsonPropertyName("videoCodec")] public string? VideoCodec { get; init; }
+    [JsonPropertyName("audioCodec")] public string? AudioCodec { get; init; }
+    [JsonPropertyName("pixelFormat")] public string? PixelFormat { get; init; }
+    [JsonPropertyName("colorSpace")] public string? ColorSpace { get; init; }
+    [JsonPropertyName("colorTransfer")] public string? ColorTransfer { get; init; }
+    [JsonPropertyName("colorPrimaries")] public string? ColorPrimaries { get; init; }
+    [JsonPropertyName("dynamicRange")] public string? DynamicRange { get; init; }
+    [JsonPropertyName("bitrate")] public long? Bitrate { get; init; }
+
+    [JsonIgnore]
+    public string DurationLabel =>
+        DurationSeconds is double seconds && seconds > 0
+            ? TimeSpan.FromSeconds(seconds).ToString(seconds >= 3600 ? @"h\:mm\:ss" : @"m\:ss")
+            : "Unknown";
+
+    [JsonIgnore]
+    public string ResolutionLabel =>
+        Width is int w && Height is int h ? $"{w}x{h}" : "Unknown";
+
+    [JsonIgnore]
+    public string VideoSummary =>
+        string.Join(" - ", new[] { VideoCodec, ResolutionLabel, FrameRate, DynamicRange }
+            .Where(value => !string.IsNullOrWhiteSpace(value) && value != "Unknown"));
+
+    [JsonIgnore]
+    public string AudioSummary => string.IsNullOrWhiteSpace(AudioCodec) ? "Unknown" : AudioCodec!;
+
+    [JsonIgnore]
+    public string ColorSummary =>
+        string.Join(" / ", new[] { ColorPrimaries, ColorTransfer, ColorSpace }
+            .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+    [JsonIgnore]
+    public string BitrateLabel =>
+        Bitrate is long b && b > 0 ? $"{b / 1_000_000.0:0.0} Mbps" : "Unknown";
+}
+
+public sealed record MediaDetail
+{
+    [JsonPropertyName("media")] public MediaInfo Media { get; init; } = new();
+    [JsonPropertyName("absolutePath")] public string AbsolutePath { get; init; } = "";
+    [JsonPropertyName("probe")] public MediaProbeInfo Probe { get; init; } = new();
+    [JsonPropertyName("thumbnails")] public List<string> Thumbnails { get; init; } = [];
+    [JsonPropertyName("resumeSeconds")] public double? ResumeSeconds { get; init; }
+
+    [JsonIgnore]
+    public Uri? PrimaryThumbnailUri
+    {
+        get
+        {
+            string? path = Thumbnails.FirstOrDefault(File.Exists) ?? Media.ThumbnailPath;
+            return !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? new Uri(path) : null;
+        }
+    }
+
+    [JsonIgnore]
+    public string PathLabel => string.IsNullOrWhiteSpace(AbsolutePath) ? Media.RelPath : AbsolutePath;
+
+    [JsonIgnore]
+    public string ResumeLabel =>
+        ResumeSeconds is double seconds && seconds > 0
+            ? $"Resume at {TimeSpan.FromSeconds(seconds):h\\:mm\\:ss}"
+            : "Play from start";
+}
+
+public sealed record MediaToolsStatus
+{
+    [JsonPropertyName("ffprobePath")] public string FfprobePath { get; init; } = "";
+    [JsonPropertyName("ffprobeAvailable")] public bool FfprobeAvailable { get; init; }
+    [JsonPropertyName("ffmpegPath")] public string FfmpegPath { get; init; } = "";
+    [JsonPropertyName("ffmpegAvailable")] public bool FfmpegAvailable { get; init; }
+    [JsonPropertyName("cacheRoot")] public string CacheRoot { get; init; } = "";
+
+    [JsonIgnore]
+    public string Summary =>
+        $"ffprobe {(FfprobeAvailable ? "ready" : "missing")} - ffmpeg {(FfmpegAvailable ? "ready" : "missing")}";
 }
 
 public sealed record LibraryChildren
@@ -214,6 +314,21 @@ public sealed class LibraryStore : IDisposable
     public IReadOnlyList<ProgressEntry> ContinueWatching(int limit = 20) =>
         FromJsonArray<ProgressEntry>(arca_progress_continue_watching_json(_db, limit));
 
+    public MediaDetail? MediaDetail(string mediaId) =>
+        FromJsonObject<MediaDetail>(arca_media_detail_json(_db, mediaId));
+
+    public bool Probe(string mediaId, bool generateThumbnails = true) =>
+        arca_media_probe(_db, mediaId, generateThumbnails) == ArcaStatus.Ok;
+
+    public (int Probed, int Failed) ProbeMissing(long libraryId, int limit = 24)
+    {
+        arca_library_probe_missing(_db, libraryId, limit, out int probed, out int failed);
+        return (probed, failed);
+    }
+
+    public MediaToolsStatus? ToolsStatus() =>
+        FromJsonObject<MediaToolsStatus>(arca_media_tools_status_json(_db));
+
     public PlaybackQueue CreateQueue() => new(this);
 
     public string? PathFor(string mediaId)
@@ -305,6 +420,22 @@ public sealed class LibraryStore : IDisposable
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr arca_media_get_path(
         IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string mediaId);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern ArcaStatus arca_media_probe(
+        IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string mediaId,
+        [MarshalAs(UnmanagedType.I1)] bool generateThumbnails);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern ArcaStatus arca_library_probe_missing(
+        IntPtr db, long libraryId, int limit, out int probed, out int failed);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr arca_media_detail_json(
+        IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string mediaId);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr arca_media_tools_status_json(IntPtr db);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern ArcaStatus arca_progress_save(

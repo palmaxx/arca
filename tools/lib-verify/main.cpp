@@ -118,6 +118,21 @@ int main() {
     CHECK(path && fs::exists(fs::path(std::u8string(path, path + std::strlen(path)))), "media path lookup resolves");
     arca_string_free(path);
 
+    char *tools_json = arca_media_tools_status_json(db);
+    CHECK(contains(tools_json, "\"cacheRoot\"") &&
+              contains(tools_json, "\"ffprobeAvailable\"") &&
+              contains(tools_json, "\"ffmpegAvailable\""),
+          "media tools status JSON");
+    arca_string_free(tools_json);
+
+    char *detail_json = arca_media_detail_json(db, id.c_str());
+    CHECK(contains(detail_json, "\"absolutePath\"") &&
+              contains(detail_json, "\"probe\"") &&
+              contains(detail_json, "\"status\":\"missing\"") &&
+              contains(detail_json, "\"thumbnails\""),
+          "media detail JSON before probe");
+    arca_string_free(detail_json);
+
     char *root_children = arca_library_children_json(db, off, "", ARCA_SORT_TITLE_ASC);
     CHECK(contains(root_children, "\"folders\"") && contains(root_children, "\"name\":\"clips\"") &&
               !contains(root_children, "\"fileName\":\"a.mkv\""),

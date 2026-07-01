@@ -144,14 +144,21 @@
                                             <DataTemplate>
                                                 <Grid Padding="0,6" ColumnSpacing="12">
                                                     <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="76" />
                                                         <ColumnDefinition Width="*" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <StackPanel Spacing="2">
+                                                    <Border Width="76" Height="44" Background="{ThemeResource SurfaceBrush}" CornerRadius="4">
+                                                        <Grid>
+                                                            <Image Source="{Binding Media.ThumbnailUri}" Stretch="UniformToFill" />
+                                                            <SymbolIcon Symbol="Video" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.45" />
+                                                        </Grid>
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
                                                         <TextBlock Text="{Binding Media.DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                         <TextBlock Text="{Binding Media.Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
-                                                    <TextBlock Grid.Column="1" Text="{Binding ProgressLabel}" Style="{StaticResource MutedTextBlockStyle}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding ProgressLabel}" Style="{StaticResource MutedTextBlockStyle}" VerticalAlignment="Center" />
                                                 </Grid>
                                             </DataTemplate>
                                         </ListView.ItemTemplate>
@@ -273,6 +280,9 @@
                                                                                 </Grid.RowDefinitions>
                                                                                 <Border Background="{ThemeResource SurfaceBrush}" CornerRadius="6">
                                                                                     <Grid>
+                                                                                        <Image
+                                                                                            Source="{Binding ThumbnailUri}"
+                                                                                            Stretch="UniformToFill" />
                                                                                         <SymbolIcon
                                                                                             Symbol="Video"
                                                                                             Width="42"
@@ -429,11 +439,27 @@
                                         SelectionMode="None">
                                         <GridView.ItemTemplate>
                                             <DataTemplate>
-                                                <Border Width="300" Height="112" Padding="12" Style="{StaticResource CardBorderStyle}">
-                                                    <StackPanel Spacing="4">
-                                                        <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
-                                                    </StackPanel>
+                                                <Border Width="340" Height="132" Padding="10" Style="{StaticResource CardBorderStyle}">
+                                                    <Grid ColumnSpacing="12">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="126" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Background="{ThemeResource SurfaceBrush}" CornerRadius="6">
+                                                            <Grid>
+                                                                <Image Source="{Binding ThumbnailUri}" Stretch="UniformToFill" />
+                                                                <SymbolIcon Symbol="Video" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.55" />
+                                                            </Grid>
+                                                        </Border>
+                                                        <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
+                                                            <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" MaxLines="2" TextWrapping="WrapWholeWords" />
+                                                        </StackPanel>
+                                                        <Button Grid.Column="2" Click="OnMediaPlayClicked" Tag="{Binding Id}" VerticalAlignment="Bottom">
+                                                            <SymbolIcon Symbol="Play" />
+                                                        </Button>
+                                                    </Grid>
                                                 </Border>
                                             </DataTemplate>
                                         </GridView.ItemTemplate>
@@ -470,14 +496,21 @@
                                 <DataTemplate>
                                     <Grid Padding="0,8" ColumnSpacing="12">
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="84" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="2">
+                                        <Border Width="84" Height="50" Background="{ThemeResource SurfaceBrush}" CornerRadius="4">
+                                            <Grid>
+                                                <Image Source="{Binding ThumbnailUri}" Stretch="UniformToFill" />
+                                                <SymbolIcon Symbol="Video" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.45" />
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1" Spacing="2">
                                             <TextBlock Text="{Binding DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                             <TextBlock Text="{Binding Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                        <Button Grid.Column="1" Click="OnSearchResultPlayClicked" Tag="{Binding Id}">
+                                        <Button Grid.Column="2" Click="OnSearchResultPlayClicked" Tag="{Binding Id}">
                                             <SymbolIcon Symbol="Play" />
                                         </Button>
                                     </Grid>
@@ -485,6 +518,99 @@
                             </ListView.ItemTemplate>
                         </ListView>
                         <TextBlock x:Name="SearchEmptyStateTextBlock" Grid.Row="2" HorizontalAlignment="Center" Style="{StaticResource MutedTextBlockStyle}" />
+                    </Grid>
+
+                    <Grid x:Name="MediaDetailView" Visibility="Collapsed">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Media.DisplayTitle}" FontSize="28" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="MediaDetailStatusTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <Button x:Name="MediaDetailProbeButton" Click="OnMediaDetailProbeClicked">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <SymbolIcon Symbol="Refresh" />
+                                        <TextBlock Text="Refresh probe" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="OnMediaDetailQueueClicked">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <SymbolIcon Symbol="List" />
+                                        <TextBlock Text="Queue" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Click="OnMediaDetailResumeClicked" Content="{Binding ResumeLabel}" />
+                                <Button Click="OnMediaDetailPlayClicked">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <SymbolIcon Symbol="Play" />
+                                        <TextBlock Text="Play" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <Grid Grid.Row="1" Margin="0,16,0,0" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="380" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Height="214" Background="{ThemeResource SurfaceBrush}" CornerRadius="6">
+                                <Grid>
+                                    <Image Source="{Binding PrimaryThumbnailUri}" Stretch="UniformToFill" />
+                                    <SymbolIcon Symbol="Video" Width="58" Height="58" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
+                                </Grid>
+                            </Border>
+                            <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="14">
+                                    <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="File" FontSize="18" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding PathLabel}" Style="{StaticResource MutedTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                                            <TextBlock Text="{Binding Media.Subtitle}" Style="{StaticResource MutedTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Media facts" FontSize="18" FontWeight="SemiBold" />
+                                            <Grid ColumnSpacing="18" RowSpacing="8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Text="Duration" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Probe.DurationLabel}" />
+                                                <TextBlock Grid.Row="1" Text="Video" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Probe.VideoSummary}" TextWrapping="WrapWholeWords" />
+                                                <TextBlock Grid.Row="2" Text="Audio" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Probe.AudioSummary}" />
+                                                <TextBlock Grid.Row="3" Text="Color" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding Probe.ColorSummary}" TextWrapping="WrapWholeWords" />
+                                                <TextBlock Grid.Row="4" Text="Bitrate" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding Probe.BitrateLabel}" />
+                                                <TextBlock Grid.Row="5" Text="Probe status" Style="{StaticResource MutedTextBlockStyle}" />
+                                                <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding Probe.Status}" />
+                                            </Grid>
+                                            <TextBlock x:Name="MediaDetailErrorTextBlock" Foreground="Tomato" TextWrapping="WrapWholeWords" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
                     </Grid>
 
                     <Grid x:Name="QueueView" Visibility="Collapsed">
@@ -529,6 +655,13 @@
                                 <TextBlock Text="Settings" FontSize="28" FontWeight="SemiBold" />
                                 <TextBlock Text="Prototype preferences stored in the Windows shell." Style="{StaticResource MutedTextBlockStyle}" />
                             </StackPanel>
+                            <Border Style="{StaticResource CardBorderStyle}" Padding="12">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Media tools" FontSize="18" FontWeight="SemiBold" />
+                                    <TextBlock x:Name="MediaToolsStatusTextBlock" Style="{StaticResource MutedTextBlockStyle}" />
+                                    <TextBlock x:Name="MediaCachePathTextBlock" Style="{StaticResource MutedTextBlockStyle}" TextWrapping="WrapWholeWords" />
+                                </StackPanel>
+                            </Border>
                             <ComboBox x:Name="ThemeComboBox" Width="220" Header="App theme" SelectionChanged="OnThemeComboBoxChanged">
                                 <ComboBoxItem Content="Default" Tag="Default" />
                                 <ComboBoxItem Content="Light" Tag="Light" />

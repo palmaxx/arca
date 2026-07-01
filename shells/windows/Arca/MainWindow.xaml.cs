@@ -14,7 +14,7 @@ public sealed partial class MainWindow : Window
     private static readonly string[] OpenExtensions =
         [".mkv", ".mp4", ".mov", ".m4v", ".webm", ".avi", ".ts", ".m2ts", ".hevc"];
 
-    private enum AppSection { Home, Browse, Library, Search, Player, Queue, Settings }
+    private enum AppSection { Home, Browse, Library, Search, MediaDetail, Player, Queue, Settings }
 
     private sealed record OnlineGroup(string Key, IReadOnlyList<MediaInfo> Items)
     {
@@ -39,6 +39,9 @@ public sealed partial class MainWindow : Window
     private string _selectedBrowseFilter = "all";
     private IReadOnlyList<MediaInfo> _currentVisibleMedia = [];
     private IReadOnlyList<MediaInfo> _currentSearchResults = [];
+    private IReadOnlyList<MediaInfo> _detailQueueSource = [];
+    private MediaDetail? _currentDetail;
+    private MediaToolsStatus? _mediaToolsStatus;
     private string? _currentMediaId;
     private string _currentTitle = "";
     private double _duration = -1;
@@ -106,6 +109,8 @@ public sealed partial class MainWindow : Window
                 "Arca", "arca.db");
             _store = new LibraryStore(dbPath);
             _queue = _store.CreateQueue();
+            _mediaToolsStatus = _store.ToolsStatus();
+            UpdateMediaToolsStatus();
             RefreshLibraries();
             RefreshHome();
             RefreshBrowse();
@@ -172,6 +177,14 @@ public sealed partial class MainWindow : Window
         BrowseEmptyStateTextBlock.Text = _currentBrowse.Sections.Count == 0
             ? "Nothing to browse in this filter yet."
             : "";
+    }
+
+    private void UpdateMediaToolsStatus()
+    {
+        if (_mediaToolsStatus is null)
+            return;
+        MediaToolsStatusTextBlock.Text = _mediaToolsStatus.Summary;
+        MediaCachePathTextBlock.Text = _mediaToolsStatus.CacheRoot;
     }
 
     private void ShowLibraryRoots()
@@ -359,6 +372,48 @@ public sealed partial class MainWindow : Window
         return null;
     }
 
+    private async void OpenMediaDetail(MediaInfo media, IEnumerable<MediaInfo>? queueSource = null)
+    {
+        if (_store is null || string.IsNullOrWhiteSpace(media.Id))
+            return;
+
+        _detailQueueSource = (queueSource ?? [media])
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToList();
+        _currentDetail = _store.MediaDetail(media.Id) ?? new MediaDetail { Media = media };
+        UpdateMediaDetailView(_currentDetail, "Loading local media facts...");
+        NavigateTo(AppSection.MediaDetail);
+
+        bool needsProbe = _currentDetail.Probe.Status != "ready" ||
+                          _currentDetail.PrimaryThumbnailUri is null;
+        if (needsProbe)
+        {
+            MediaDetailProbeButton.IsEnabled = false;
+            await Task.Run(() => _store.Probe(media.Id, generateThumbnails: true));
+            _currentDetail = _store.MediaDetail(media.Id) ?? _currentDetail;
+            UpdateMediaDetailView(_currentDetail, null);
+            RefreshHome();
+            RefreshBrowse();
+            if (_selectedLibrary is not null)
+                LoadLibraryChildren();
+        }
+        else
+        {
+            UpdateMediaDetailView(_currentDetail, null);
+        }
+    }
+
+    private void UpdateMediaDetailView(MediaDetail detail, string? transientStatus)
+    {
+        MediaDetailView.DataContext = detail;
+        MediaDetailStatusTextBlock.Text = transientStatus ??
+            (detail.Probe.Status == "ready" ? "Local probe ready." :
+             detail.Probe.Status == "missing-tools" ? "ffprobe/ffmpeg unavailable." :
+             "Probe pending.");
+        MediaDetailErrorTextBlock.Text = detail.Probe.Error ?? "";
+        MediaDetailProbeButton.IsEnabled = _store is not null;
+    }
+
     private void PlayMedia(MediaInfo media, IEnumerable<MediaInfo>? queueSource = null, bool tryResume = false)
     {
         if (_store is null || _queue is null)
@@ -424,7 +479,8 @@ public sealed partial class MainWindow : Window
 
     private void NavigateTo(AppSection section)
     {
-        if (section != AppSection.Player && section != AppSection.Queue && section != AppSection.Settings)
+        if (section != AppSection.Player && section != AppSection.Queue &&
+            section != AppSection.Settings && section != AppSection.MediaDetail)
             _lastNonPlayerSection = section;
 
         _currentSection = section;
@@ -432,6 +488,7 @@ public sealed partial class MainWindow : Window
         BrowseView.Visibility = section == AppSection.Browse ? Visibility.Visible : Visibility.Collapsed;
         LibraryView.Visibility = section == AppSection.Library ? Visibility.Visible : Visibility.Collapsed;
         SearchView.Visibility = section == AppSection.Search ? Visibility.Visible : Visibility.Collapsed;
+        MediaDetailView.Visibility = section == AppSection.MediaDetail ? Visibility.Visible : Visibility.Collapsed;
         QueueView.Visibility = section == AppSection.Queue ? Visibility.Visible : Visibility.Collapsed;
         SettingsView.Visibility = section == AppSection.Settings ? Visibility.Visible : Visibility.Collapsed;
         PlayerView.Visibility = section == AppSection.Player ? Visibility.Visible : Visibility.Collapsed;
@@ -445,6 +502,12 @@ public sealed partial class MainWindow : Window
             AppSection.Browse => BrowseNavigationItem,
             AppSection.Library => LibraryNavigationItem,
             AppSection.Search => SearchNavigationItem,
+            AppSection.MediaDetail => _lastNonPlayerSection switch
+            {
+                AppSection.Browse => BrowseNavigationItem,
+                AppSection.Search => SearchNavigationItem,
+                _ => LibraryNavigationItem,
+            },
             AppSection.Player => PlayerNavigationItem,
             AppSection.Queue => QueueNavigationItem,
             AppSection.Settings => SettingsNavigationItem,
@@ -723,6 +786,13 @@ public sealed partial class MainWindow : Window
     private void OnMediaItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is MediaInfo media)
+            OpenMediaDetail(media, _currentVisibleMedia);
+    }
+
+    private void OnMediaPlayClicked(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: string id } &&
+            _currentVisibleMedia.FirstOrDefault(m => m.Id == id) is { } media)
             PlayMedia(media, _currentVisibleMedia, tryResume: true);
     }
 
@@ -740,7 +810,7 @@ public sealed partial class MainWindow : Window
         IReadOnlyList<MediaInfo> queueSource = sender is GridView { ItemsSource: IEnumerable<MediaInfo> entries }
             ? entries.ToList()
             : [];
-        PlayMedia(media, queueSource.Count == 0 ? [media] : queueSource, tryResume: true);
+        OpenMediaDetail(media, queueSource.Count == 0 ? [media] : queueSource);
     }
 
     private void OnBrowseEntryPlayClicked(object sender, RoutedEventArgs e)
@@ -753,7 +823,7 @@ public sealed partial class MainWindow : Window
     private void OnSearchResultItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is MediaInfo media)
-            PlayMedia(media, _currentSearchResults, tryResume: true);
+            OpenMediaDetail(media, _currentSearchResults);
     }
 
     private void OnSearchResultPlayClicked(object sender, RoutedEventArgs e)
@@ -763,10 +833,58 @@ public sealed partial class MainWindow : Window
             PlayMedia(media, _currentSearchResults, tryResume: true);
     }
 
+    private void OnMediaDetailPlayClicked(object sender, RoutedEventArgs e)
+    {
+        if (_currentDetail is null)
+            return;
+        _lastNonPlayerSection = AppSection.MediaDetail;
+        PlayMedia(_currentDetail.Media,
+            _detailQueueSource.Count == 0 ? [_currentDetail.Media] : _detailQueueSource,
+            tryResume: false);
+    }
+
+    private void OnMediaDetailResumeClicked(object sender, RoutedEventArgs e)
+    {
+        if (_currentDetail is null)
+            return;
+        _lastNonPlayerSection = AppSection.MediaDetail;
+        PlayMedia(_currentDetail.Media,
+            _detailQueueSource.Count == 0 ? [_currentDetail.Media] : _detailQueueSource,
+            tryResume: true);
+    }
+
+    private void OnMediaDetailQueueClicked(object sender, RoutedEventArgs e)
+    {
+        if (_currentDetail is null || _queue is null)
+            return;
+        var queueItems = (_detailQueueSource.Count == 0 ? [_currentDetail.Media] : _detailQueueSource)
+            .Where(item => !string.IsNullOrWhiteSpace(item.Id))
+            .ToList();
+        _queue.Set(queueItems.Select(item => item.Id), _currentDetail.Media.Id);
+        RefreshQueueView();
+        NavigateTo(AppSection.Queue);
+    }
+
+    private async void OnMediaDetailProbeClicked(object sender, RoutedEventArgs e)
+    {
+        if (_store is null || _currentDetail is null)
+            return;
+        MediaDetailProbeButton.IsEnabled = false;
+        UpdateMediaDetailView(_currentDetail, "Refreshing local probe...");
+        string id = _currentDetail.Media.Id;
+        await Task.Run(() => _store.Probe(id, generateThumbnails: true));
+        _currentDetail = _store.MediaDetail(id) ?? _currentDetail;
+        UpdateMediaDetailView(_currentDetail, null);
+        RefreshHome();
+        RefreshBrowse();
+        if (_selectedLibrary is not null)
+            LoadLibraryChildren();
+    }
+
     private void OnContinueWatchingItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is ProgressEntry entry)
-            PlayMedia(entry.Media, [entry.Media], tryResume: true);
+            OpenMediaDetail(entry.Media, [entry.Media]);
     }
 
     private void OnQueueItemClick(object sender, ItemClickEventArgs e)
@@ -847,6 +965,8 @@ public sealed partial class MainWindow : Window
             NavigateTo(AppSection.Home);
         else if (_currentSection == AppSection.Search)
             NavigateTo(_selectedLibrary is null ? AppSection.Home : AppSection.Library);
+        else if (_currentSection == AppSection.MediaDetail)
+            NavigateTo(_lastNonPlayerSection);
         else if (_currentSection == AppSection.Queue || _currentSection == AppSection.Settings)
             NavigateTo(_lastNonPlayerSection);
         else

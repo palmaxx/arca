@@ -47,9 +47,13 @@ substitute for these shell/UI checks.
 - [ ] Home shows continue-watching rows after playing at least one file long
       enough to save progress.
 - [ ] Browse opens from the left nav, filter chips update rows, and clicking a
-      media card starts playback.
+      media card opens Media Detail; the card play button starts playback.
 - [ ] Global search navigates to Search and returns matching media from the
       core FTS index.
+- [ ] Media Detail shows local probe facts and thumbnails after ffprobe/ffmpeg
+      are available; missing tools are called out in Settings.
+- [ ] Library and Search rows open Media Detail on row/card click and still
+      offer an explicit play button.
 - [ ] Queue page shows the currently selected queue and next/previous follow
       the same order.
 - [ ] Window chrome matches the intended Fluss shape: custom title bar, menu,

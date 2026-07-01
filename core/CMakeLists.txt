@@ -14,6 +14,7 @@ add_library(arca_core SHARED
   src/engine/render_d3d11.cpp
   src/library/library.cpp
   src/library/online_index.cpp
+  src/media/media_tools.cpp
 )
 
 target_include_directories(arca_core PUBLIC include)

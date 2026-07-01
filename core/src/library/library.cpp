@@ -6,6 +6,7 @@
 
 #include "arca/arca_library.h"
 
+#include "../media/media_tools.h"
 #include "../util/json_writer.h"
 #include "online_index.h"
 
@@ -14,6 +15,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <map>
@@ -29,6 +32,8 @@ namespace fs = std::filesystem;
 
 struct arca_db {
     sqlite3 *db = nullptr;
+    std::string path;
+    fs::path cache_root;
 };
 
 struct arca_queue {
@@ -43,7 +48,7 @@ struct arca_queue {
 
 namespace {
 
-constexpr int kSchemaVersion = 2;
+constexpr int kSchemaVersion = 3;
 
 const char *kSchema = R"sql(
 CREATE TABLE IF NOT EXISTS schema_version(version INTEGER NOT NULL);
@@ -89,6 +94,36 @@ CREATE TABLE IF NOT EXISTS playback_progress(
   last_updated_utc INTEGER NOT NULL,
   is_completed INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS media_probes(
+  media_id TEXT PRIMARY KEY REFERENCES media_items(id) ON DELETE CASCADE,
+  source_size INTEGER NOT NULL,
+  source_modified_utc INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  error TEXT,
+  duration_seconds REAL,
+  width INTEGER,
+  height INTEGER,
+  frame_rate TEXT,
+  video_codec TEXT,
+  audio_codec TEXT,
+  pixel_format TEXT,
+  color_space TEXT,
+  color_transfer TEXT,
+  color_primaries TEXT,
+  dynamic_range TEXT,
+  bitrate INTEGER,
+  probed_utc INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS media_thumbnails(
+  media_id TEXT NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
+  slot INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  source_size INTEGER NOT NULL,
+  source_modified_utc INTEGER NOT NULL,
+  generated_utc INTEGER NOT NULL,
+  PRIMARY KEY(media_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_media_probe_status ON media_probes(status);
 )sql";
 
 const std::unordered_set<std::string> kVideoExts = {
@@ -111,6 +146,21 @@ struct MediaRow {
     std::optional<int64_t> season;
     std::optional<int64_t> episode;
     std::optional<std::string> group_key;
+    std::optional<std::string> probe_status;
+    std::optional<std::string> probe_error;
+    std::optional<double> duration_seconds;
+    std::optional<int64_t> width;
+    std::optional<int64_t> height;
+    std::optional<std::string> frame_rate;
+    std::optional<std::string> video_codec;
+    std::optional<std::string> audio_codec;
+    std::optional<std::string> pixel_format;
+    std::optional<std::string> color_space;
+    std::optional<std::string> color_transfer;
+    std::optional<std::string> color_primaries;
+    std::optional<std::string> dynamic_range;
+    std::optional<int64_t> bitrate;
+    std::optional<std::string> thumbnail_path;
 };
 
 int64_t now_utc() {
@@ -244,6 +294,21 @@ MediaRow read_media_row(Stmt &st) {
     row.library_id = st.col_i64(11);
     row.library_name = st.col_text(12);
     row.library_mode = st.col_i64(13);
+    if (!st.col_null(14)) row.probe_status = st.col_text(14);
+    if (!st.col_null(15)) row.probe_error = st.col_text(15);
+    if (!st.col_null(16)) row.duration_seconds = st.col_double(16);
+    if (!st.col_null(17)) row.width = st.col_i64(17);
+    if (!st.col_null(18)) row.height = st.col_i64(18);
+    if (!st.col_null(19)) row.frame_rate = st.col_text(19);
+    if (!st.col_null(20)) row.video_codec = st.col_text(20);
+    if (!st.col_null(21)) row.audio_codec = st.col_text(21);
+    if (!st.col_null(22)) row.pixel_format = st.col_text(22);
+    if (!st.col_null(23)) row.color_space = st.col_text(23);
+    if (!st.col_null(24)) row.color_transfer = st.col_text(24);
+    if (!st.col_null(25)) row.color_primaries = st.col_text(25);
+    if (!st.col_null(26)) row.dynamic_range = st.col_text(26);
+    if (!st.col_null(27)) row.bitrate = st.col_i64(27);
+    if (!st.col_null(28)) row.thumbnail_path = st.col_text(28);
     return row;
 }
 
@@ -251,10 +316,21 @@ const char *kMediaSelect =
     "SELECT m.id, m.file_name, m.rel_path, m.file_size,"
     " m.modified_utc, m.added_utc,"
     " o.parse_title, o.parse_year, o.season, o.episode, o.group_key,"
-    " l.id, l.name, l.mode"
+    " l.id, l.name, l.mode,"
+    " p.status, p.error, p.duration_seconds, p.width, p.height, p.frame_rate,"
+    " p.video_codec, p.audio_codec, p.pixel_format, p.color_space,"
+    " p.color_transfer, p.color_primaries, p.dynamic_range, p.bitrate,"
+    " t.path"
     " FROM media_items m"
     " JOIN libraries l ON l.id = m.library_id"
-    " LEFT JOIN online_media_info o ON o.media_id = m.id";
+    " LEFT JOIN online_media_info o ON o.media_id = m.id"
+    " LEFT JOIN media_probes p ON p.media_id = m.id"
+    " AND p.source_size = m.file_size"
+    " AND p.source_modified_utc = m.modified_utc"
+    " LEFT JOIN media_thumbnails t ON t.media_id = m.id"
+    " AND t.slot = 0"
+    " AND t.source_size = m.file_size"
+    " AND t.source_modified_utc = m.modified_utc";
 
 std::vector<MediaRow> media_for_library(sqlite3 *db, int64_t library_id) {
     std::vector<MediaRow> rows;
@@ -412,6 +488,14 @@ void write_media_object(arca::JsonWriter &w, const MediaRow &row,
     if (row.season) { w.key("season"); w.value(*row.season); }
     if (row.episode) { w.key("episode"); w.value(*row.episode); }
     if (row.group_key) { w.key("groupKey"); w.value(*row.group_key); }
+    if (row.thumbnail_path) { w.key("thumbnailPath"); w.value(*row.thumbnail_path); }
+    if (row.duration_seconds) { w.key("durationSeconds"); w.value(*row.duration_seconds); }
+    if (row.width && row.height) {
+        w.key("resolution");
+        w.value(std::to_string(*row.width) + "x" + std::to_string(*row.height));
+    }
+    if (row.dynamic_range) { w.key("dynamicRange"); w.value(*row.dynamic_range); }
+    if (row.probe_status) { w.key("probeStatus"); w.value(*row.probe_status); }
     if (include_library) {
         w.key("libraryId"); w.value(row.library_id);
         w.key("libraryName"); w.value(row.library_name);
@@ -572,6 +656,136 @@ arca_status queue_set_current_index(arca_queue *queue, int index) {
     return ARCA_OK;
 }
 
+std::optional<fs::path> media_path_for_id(sqlite3 *db, const std::string &media_id,
+                                          MediaRow *out_row = nullptr) {
+    auto row = media_by_id(db, media_id);
+    if (!row)
+        return std::nullopt;
+    if (out_row)
+        *out_row = *row;
+    Stmt st(db,
+            "SELECT l.root_path, m.rel_path FROM media_items m"
+            " JOIN libraries l ON l.id = m.library_id WHERE m.id=?");
+    st.bind(1, media_id);
+    if (!st.step_row())
+        return std::nullopt;
+    return path_from_utf8(st.col_text(0)) / path_from_utf8(st.col_text(1));
+}
+
+void bind_optional_text(Stmt &st, int index, const std::string &value) {
+    if (value.empty())
+        st.bind_null(index);
+    else
+        st.bind(index, value);
+}
+
+void upsert_probe(sqlite3 *db, const MediaRow &row, const arca::MediaProbeResult &probe) {
+    Stmt st(db,
+            "INSERT INTO media_probes"
+            "(media_id, source_size, source_modified_utc, status, error,"
+            " duration_seconds, width, height, frame_rate, video_codec,"
+            " audio_codec, pixel_format, color_space, color_transfer,"
+            " color_primaries, dynamic_range, bitrate, probed_utc)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(media_id) DO UPDATE SET"
+            " source_size=excluded.source_size,"
+            " source_modified_utc=excluded.source_modified_utc,"
+            " status=excluded.status,"
+            " error=excluded.error,"
+            " duration_seconds=excluded.duration_seconds,"
+            " width=excluded.width,"
+            " height=excluded.height,"
+            " frame_rate=excluded.frame_rate,"
+            " video_codec=excluded.video_codec,"
+            " audio_codec=excluded.audio_codec,"
+            " pixel_format=excluded.pixel_format,"
+            " color_space=excluded.color_space,"
+            " color_transfer=excluded.color_transfer,"
+            " color_primaries=excluded.color_primaries,"
+            " dynamic_range=excluded.dynamic_range,"
+            " bitrate=excluded.bitrate,"
+            " probed_utc=excluded.probed_utc");
+    st.bind(1, row.id);
+    st.bind(2, row.size);
+    st.bind(3, row.modified_utc);
+    st.bind(4, probe.status.empty() ? std::string("failed") : probe.status);
+    bind_optional_text(st, 5, probe.error);
+    if (probe.duration_seconds > 0) st.bind(6, probe.duration_seconds); else st.bind_null(6);
+    if (probe.width > 0) st.bind(7, (int64_t)probe.width); else st.bind_null(7);
+    if (probe.height > 0) st.bind(8, (int64_t)probe.height); else st.bind_null(8);
+    bind_optional_text(st, 9, probe.frame_rate);
+    bind_optional_text(st, 10, probe.video_codec);
+    bind_optional_text(st, 11, probe.audio_codec);
+    bind_optional_text(st, 12, probe.pixel_format);
+    bind_optional_text(st, 13, probe.color_space);
+    bind_optional_text(st, 14, probe.color_transfer);
+    bind_optional_text(st, 15, probe.color_primaries);
+    bind_optional_text(st, 16, probe.dynamic_range);
+    if (probe.bitrate > 0) st.bind(17, probe.bitrate); else st.bind_null(17);
+    st.bind(18, now_utc());
+    st.step_done();
+}
+
+std::vector<std::string> thumbnail_paths(sqlite3 *db, const MediaRow &row) {
+    std::vector<std::string> paths;
+    Stmt st(db,
+            "SELECT path FROM media_thumbnails"
+            " WHERE media_id=? AND source_size=? AND source_modified_utc=?"
+            " ORDER BY slot");
+    st.bind(1, row.id);
+    st.bind(2, row.size);
+    st.bind(3, row.modified_utc);
+    while (st.step_row()) {
+        std::string p = st.col_text(0);
+        std::error_code ec;
+        if (fs::is_regular_file(path_from_utf8(p), ec))
+            paths.push_back(std::move(p));
+    }
+    return paths;
+}
+
+void replace_thumbnails(sqlite3 *db, const MediaRow &row,
+                        const std::vector<fs::path> &paths) {
+    Stmt del(db, "DELETE FROM media_thumbnails WHERE media_id=?");
+    del.bind(1, row.id);
+    del.step_done();
+
+    Stmt ins(db,
+            "INSERT OR REPLACE INTO media_thumbnails"
+            "(media_id, slot, path, source_size, source_modified_utc, generated_utc)"
+            " VALUES (?,?,?,?,?,?)");
+    int slot = 0;
+    for (const auto &path : paths) {
+        ins.bind(1, row.id);
+        ins.bind(2, (int64_t)slot++);
+        ins.bind(3, utf8_of(path));
+        ins.bind(4, row.size);
+        ins.bind(5, row.modified_utc);
+        ins.bind(6, now_utc());
+        ins.step_done();
+        ins.reset();
+    }
+}
+
+void write_probe_object(arca::JsonWriter &w, const MediaRow &row) {
+    w.begin_object();
+    w.key("status"); w.value(row.probe_status ? *row.probe_status : "missing");
+    if (row.probe_error) { w.key("error"); w.value(*row.probe_error); }
+    if (row.duration_seconds) { w.key("durationSeconds"); w.value(*row.duration_seconds); }
+    if (row.width) { w.key("width"); w.value(*row.width); }
+    if (row.height) { w.key("height"); w.value(*row.height); }
+    if (row.frame_rate) { w.key("frameRate"); w.value(*row.frame_rate); }
+    if (row.video_codec) { w.key("videoCodec"); w.value(*row.video_codec); }
+    if (row.audio_codec) { w.key("audioCodec"); w.value(*row.audio_codec); }
+    if (row.pixel_format) { w.key("pixelFormat"); w.value(*row.pixel_format); }
+    if (row.color_space) { w.key("colorSpace"); w.value(*row.color_space); }
+    if (row.color_transfer) { w.key("colorTransfer"); w.value(*row.color_transfer); }
+    if (row.color_primaries) { w.key("colorPrimaries"); w.value(*row.color_primaries); }
+    if (row.dynamic_range) { w.key("dynamicRange"); w.value(*row.dynamic_range); }
+    if (row.bitrate) { w.key("bitrate"); w.value(*row.bitrate); }
+    w.end_object();
+}
+
 } // namespace
 
 extern "C" {
@@ -582,6 +796,11 @@ arca_db *arca_db_open(const char *db_path_utf8) {
     auto *handle = new (std::nothrow) arca_db();
     if (!handle)
         return nullptr;
+    handle->path = db_path_utf8;
+    std::error_code path_ec;
+    fs::path db_path = fs::absolute(path_from_utf8(db_path_utf8), path_ec);
+    fs::path db_dir = path_ec ? fs::current_path() : db_path.parent_path();
+    handle->cache_root = db_dir / "cache" / "media";
 
     if (sqlite3_open_v2(db_path_utf8, &handle->db,
                         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |
@@ -940,14 +1159,119 @@ char *arca_media_browse_json(arca_db *db, const char *filter_utf8,
 char *arca_media_get_path(arca_db *db, const char *media_id) {
     if (!db || !media_id)
         return nullptr;
-    Stmt st(db->db,
-            "SELECT l.root_path, m.rel_path FROM media_items m"
-            " JOIN libraries l ON l.id = m.library_id WHERE m.id=?");
-    st.bind(1, std::string(media_id));
-    if (!st.step_row())
+    auto path = media_path_for_id(db->db, std::string(media_id));
+    if (!path)
         return nullptr;
-    fs::path abs = path_from_utf8(st.col_text(0)) / path_from_utf8(st.col_text(1));
-    return dup_out(utf8_of(abs));
+    return dup_out(utf8_of(*path));
+}
+
+arca_status arca_media_probe(arca_db *db, const char *media_id,
+                             bool generate_thumbnails) {
+    if (!db || !media_id)
+        return ARCA_ERR_INVALID_ARG;
+    MediaRow row;
+    auto media_path = media_path_for_id(db->db, std::string(media_id), &row);
+    if (!media_path)
+        return ARCA_ERR_INVALID_ARG;
+
+    arca::MediaProbeResult probe = arca::probe_media_file(*media_path);
+    upsert_probe(db->db, row, probe);
+    if (!probe.ok)
+        return probe.status == "missing-tools" ? ARCA_ERR_UNSUPPORTED : ARCA_ERR_ENGINE;
+
+    if (generate_thumbnails) {
+        std::vector<fs::path> thumbs;
+        std::string thumb_error;
+        fs::path cache_dir = db->cache_root / row.id;
+        if (arca::generate_media_thumbnails(*media_path, cache_dir,
+                                            probe.duration_seconds,
+                                            thumbs, thumb_error)) {
+            replace_thumbnails(db->db, row, thumbs);
+        }
+    }
+    return ARCA_OK;
+}
+
+arca_status arca_library_probe_missing(arca_db *db, int64_t library_id,
+                                       int limit,
+                                       int *out_probed,
+                                       int *out_failed) {
+    if (out_probed) *out_probed = 0;
+    if (out_failed) *out_failed = 0;
+    if (!db)
+        return ARCA_ERR_INVALID_ARG;
+
+    int capped = std::clamp(limit <= 0 ? 24 : limit, 1, 500);
+    Stmt st(db->db,
+            "SELECT m.id FROM media_items m"
+            " LEFT JOIN media_probes p ON p.media_id = m.id"
+            " WHERE m.library_id=?"
+            " AND (p.media_id IS NULL"
+            " OR p.source_size != m.file_size"
+            " OR p.source_modified_utc != m.modified_utc"
+            " OR p.status != 'ready')"
+            " ORDER BY m.added_utc DESC LIMIT ?");
+    st.bind(1, library_id);
+    st.bind(2, (int64_t)capped);
+    std::vector<std::string> ids;
+    while (st.step_row())
+        ids.push_back(st.col_text(0));
+
+    int probed = 0, failed = 0;
+    for (const auto &id : ids) {
+        arca_status status = arca_media_probe(db, id.c_str(), true);
+        if (status == ARCA_OK)
+            probed++;
+        else
+            failed++;
+    }
+    if (out_probed) *out_probed = probed;
+    if (out_failed) *out_failed = failed;
+    return failed == 0 ? ARCA_OK : ARCA_ERR_ENGINE;
+}
+
+char *arca_media_detail_json(arca_db *db, const char *media_id) {
+    if (!db || !media_id)
+        return nullptr;
+    MediaRow row;
+    auto media_path = media_path_for_id(db->db, std::string(media_id), &row);
+    if (!media_path)
+        return nullptr;
+    auto thumbs = thumbnail_paths(db->db, row);
+    double resume = arca_progress_resume_seconds(db, media_id);
+
+    arca::JsonWriter w;
+    w.begin_object();
+    w.key("media"); write_media_object(w, row, true);
+    w.key("absolutePath"); w.value(utf8_of(*media_path));
+    w.key("probe"); write_probe_object(w, row);
+    w.key("thumbnails");
+    w.begin_array();
+    for (const auto &thumb : thumbs)
+        w.value(thumb);
+    w.end_array();
+    w.key("resumeSeconds");
+    if (resume >= 0)
+        w.value(resume);
+    else
+        w.value_null();
+    w.end_object();
+    return dup_out(w.str());
+}
+
+char *arca_media_tools_status_json(arca_db *db) {
+    if (!db)
+        return nullptr;
+    arca::MediaToolStatus status = arca::media_tool_status();
+    arca::JsonWriter w;
+    w.begin_object();
+    w.key("ffprobePath"); w.value(status.ffprobe_path);
+    w.key("ffprobeAvailable"); w.value(status.ffprobe_available);
+    w.key("ffmpegPath"); w.value(status.ffmpeg_path);
+    w.key("ffmpegAvailable"); w.value(status.ffmpeg_available);
+    w.key("cacheRoot"); w.value(utf8_of(db->cache_root));
+    w.end_object();
+    return dup_out(w.str());
 }
 
 arca_status arca_progress_save(arca_db *db, const char *media_id,
@@ -998,15 +1322,26 @@ char *arca_progress_continue_watching_json(arca_db *db, int limit) {
         " m.modified_utc, m.added_utc,"
         " o.parse_title, o.parse_year, o.season, o.episode, o.group_key,"
         " l.id, l.name, l.mode,"
-        " p.position_seconds, p.duration_seconds, p.last_updated_utc"
+        " mp.status, mp.error, mp.duration_seconds, mp.width, mp.height, mp.frame_rate,"
+        " mp.video_codec, mp.audio_codec, mp.pixel_format, mp.color_space,"
+        " mp.color_transfer, mp.color_primaries, mp.dynamic_range, mp.bitrate,"
+        " t.path,"
+        " prog.position_seconds, prog.duration_seconds, prog.last_updated_utc"
         " FROM media_items m"
         " JOIN libraries l ON l.id = m.library_id"
         " LEFT JOIN online_media_info o ON o.media_id = m.id"
-        " JOIN playback_progress p ON p.media_id = m.id"
-        " WHERE p.is_completed=0"
-        " AND p.position_seconds >= 5"
-        " AND (p.duration_seconds <= 0 OR p.position_seconds < p.duration_seconds - 5)"
-        " ORDER BY p.last_updated_utc DESC LIMIT ?";
+        " LEFT JOIN media_probes mp ON mp.media_id = m.id"
+        " AND mp.source_size = m.file_size"
+        " AND mp.source_modified_utc = m.modified_utc"
+        " LEFT JOIN media_thumbnails t ON t.media_id = m.id"
+        " AND t.slot = 0"
+        " AND t.source_size = m.file_size"
+        " AND t.source_modified_utc = m.modified_utc"
+        " JOIN playback_progress prog ON prog.media_id = m.id"
+        " WHERE prog.is_completed=0"
+        " AND prog.position_seconds >= 5"
+        " AND (prog.duration_seconds <= 0 OR prog.position_seconds < prog.duration_seconds - 5)"
+        " ORDER BY prog.last_updated_utc DESC LIMIT ?";
     Stmt st(db->db, sql.c_str());
     st.bind(1, (int64_t)capped);
     arca::JsonWriter w;
@@ -1015,9 +1350,9 @@ char *arca_progress_continue_watching_json(arca_db *db, int limit) {
         MediaRow row = read_media_row(st);
         w.begin_object();
         w.key("media"); write_media_object(w, row, true);
-        w.key("positionSeconds"); w.value(st.col_double(14));
-        w.key("durationSeconds"); w.value(st.col_double(15));
-        w.key("lastUpdatedUtc"); w.value(st.col_i64(16));
+        w.key("positionSeconds"); w.value(st.col_double(29));
+        w.key("durationSeconds"); w.value(st.col_double(30));
+        w.key("lastUpdatedUtc"); w.value(st.col_i64(31));
         w.end_object();
     }
     w.end_array();

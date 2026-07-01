@@ -199,10 +199,10 @@ arca_engine *arca_engine_create(const arca_engine_params *params) {
     // Engine outlives files; EOF holds the last frame (ARCA_PLAY_ENDED).
     mpv_set_option_string(e->mpv, "idle", "yes");
     mpv_set_option_string(e->mpv, "keep-open", "yes");
-    // ADR-003: the pl-d3d11 render path is software-decode-only in the
-    // current engine fork; pin it so behavior is deterministic for the
-    // verification gate. Revisit when render-API hwdec lands engine-side.
-    mpv_set_option_string(e->mpv, "hwdec", "no");
+    // The frozen fork exposes the host D3D11 device to mpv's hwdec registry.
+    // Prefer a safe native decoder when one is available, while retaining
+    // software decode as mpv's fallback on unsupported devices/codecs.
+    mpv_set_option_string(e->mpv, "hwdec", "auto-safe");
     // The render session clears its own target; letting the renderer clear
     // letterbox borders requires blit_dst on the wrapped texture, which
     // R10G10B10A2 lacks on some vendors (NVIDIA: pl_tex_clear validation

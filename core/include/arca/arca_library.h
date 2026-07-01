@@ -68,6 +68,8 @@ ARCA_API arca_status arca_library_scan(arca_db *db, int64_t library_id,
 //  "modifiedUtc":123,"addedUtc":123,"libraryId":1,"libraryName":"…",
 //  "mode":"offline"}
 // ONLINE libraries may additionally include title/year/season/episode/groupKey.
+// Probed media may additionally include thumbnailPath, durationSeconds,
+// resolution, dynamicRange, and probeStatus.
 ARCA_API char *arca_media_list_json(arca_db *db, int64_t library_id);
 
 // JSON:
@@ -92,6 +94,24 @@ ARCA_API char *arca_media_browse_json(arca_db *db, const char *filter_utf8,
 
 // Absolute filesystem path for playback; NULL if unknown id.
 ARCA_API char *arca_media_get_path(arca_db *db, const char *media_id);
+
+// Local media intelligence. These functions never call online services:
+// probing/thumbnails are derived from the local file through ffprobe/ffmpeg.
+// `arca_media_probe` updates cached probe fields and optionally regenerates
+// three thumbnail slots. `arca_library_probe_missing` probes stale/missing
+// rows for one library up to `limit` (<=0 means a small default batch).
+ARCA_API arca_status arca_media_probe(arca_db *db, const char *media_id,
+                                      bool generate_thumbnails);
+ARCA_API arca_status arca_library_probe_missing(arca_db *db, int64_t library_id,
+                                                int limit,
+                                                int *out_probed,
+                                                int *out_failed);
+// JSON object:
+// {"media":{...},"absolutePath":"…","probe":{...},"thumbnails":["…"],
+//  "resumeSeconds":12.3|null}
+ARCA_API char *arca_media_detail_json(arca_db *db, const char *media_id);
+// JSON tool status for Settings: resolved paths, availability flags, cache root.
+ARCA_API char *arca_media_tools_status_json(arca_db *db);
 
 // Resume/continue-watching state. `resume_seconds` returns <0 when no useful
 // resume point exists (completed, near start, or near end).
